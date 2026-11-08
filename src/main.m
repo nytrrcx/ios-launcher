@@ -5,6 +5,7 @@
 #import "LCUtils/UIKitPrivate.h"
 #import "LCUtils/utils.h"
 #import "Utils.h"
+#import "ProMotionTiming.h"
 #import "components/LogUtils.h"
 #import <Foundation/Foundation.h>
 
@@ -688,16 +689,7 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
             *path = oldPath;
             return @"The ProMotion renderer lacks the direct EGL loader fix. Reinstall the updated launcher build.";
         }
-        AppLog(@"[ProMotion] ANGLEGLKit loaded with stencil and direct EGL fixes, loading timing library.");
-        [LogUtils flush];
-        NSString *timingLibrary = [gcMainBundle.privateFrameworksPath stringByAppendingPathComponent:@"CAHighFPS.dylib"];
-        dlerror();
-        if (!dlopen(timingLibrary.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL)) {
-            const char *failure = dlerror();
-            *path = oldPath;
-            return [NSString stringWithFormat:@"Cannot load ProMotion timing: %s", failure ?: "unknown error"];
-        }
-        AppLog(@"[ProMotion] Timing library loaded.");
+        AppLog(@"[ProMotion] ANGLEGLKit loaded; game timing will be installed after the game loads.");
         [LogUtils flush];
     } else {
         unsetenv("ANGLEGLKit");
@@ -726,6 +718,16 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
 		return appError;
 	}
 	AppLog(@"[invokeAppMain] No dlopen error");
+
+    if ([gcUserDefaults boolForKey:@"USE_MAX_FPS"]) {
+        AppLog(@"[ProMotion] Installing timing on the loaded game callback.");
+        [LogUtils flush];
+        NSString *timingError = nil;
+        if (!GCInstallGameProMotionTiming(&timingError)) {
+            *path = oldPath;
+            return timingError;
+        }
+    }
 
 	// hook dlsym to solve RTLD_MAIN_ONLY
 	rebind_symbols((struct rebinding[1]){ { "dlsym", (void*)new_dlsym, (void**)&orig_dlsym } }, 1);

@@ -10,8 +10,10 @@ static NSString *loadTweakAtURL(NSURL *url) {
     if (![tweakPath hasSuffix:@".dylib"]) {
         return nil;
     }
-    if ([tweakPath hasSuffix:@"CAHighFPS.dylib"] && !getenv("ANGLEGLKit")) {
-        NSLog(@"Skipping to load tweak %@ because ANGLEGLKit env isn't set.", tweak);
+    if ([tweak isEqualToString:@"CAHighFPS.dylib"]) {
+        // Ignore links left by older launcher builds. The launcher now configures
+        // the game's callback directly, after its binary has finished loading.
+        NSLog(@"Skipping legacy %@; timing is provided by the launcher.", tweak);
         return nil;
     }
     void *handle = dlopen(tweakPath.UTF8String, RTLD_LAZY | RTLD_GLOBAL);

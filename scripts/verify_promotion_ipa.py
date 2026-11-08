@@ -43,7 +43,11 @@ with zipfile.ZipFile(ipa) as archive:
                 raise SystemExit('Renderer still depends on an executable-path EGL loader or native OpenGLES')
             if not any('/libGLESv2.framework/' in path for path in imports):
                 raise SystemExit('Renderer does not link directly to ANGLE')
-    archive.read(base + 'Frameworks/CAHighFPS.dylib')
+    if any(name.endswith('/CAHighFPS.dylib') for name in archive.namelist()):
+        raise SystemExit('IPA still contains the timing library that crashed during preload')
+    launcher = archive.read(base + 'Geode')
+    if b'GCInstallGameProMotionTiming' not in launcher or b'Game callback timing installed' not in launcher:
+        raise SystemExit('Launcher does not include explicit game callback timing')
     info = plistlib.loads(archive.read(base + 'Info.plist'))
     if not info.get('CADisableMinimumFrameDurationOnPhone'):
         raise SystemExit('Launcher does not opt into ProMotion')
@@ -53,6 +57,7 @@ provenance = {
     'stencil_fix_version': 1,
     'jitless_storage': 'derived-from-game-mach-o',
     'egl_binding': 'direct-libglesv2',
+    'timing': 'launcher-game-callback',
     'ipa_sha256': hashlib.sha256(ipa.read_bytes()).hexdigest(),
     'device_tested': False,
 }

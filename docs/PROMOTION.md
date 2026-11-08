@@ -35,8 +35,7 @@ python3 scripts/collect_angle.py vendor/ANGLEGLKit/.theos /tmp/promotion-framewo
 make package FINALPACKAGE=1 STRIP=0 PROMOTION_FRAMEWORKS_DIR=/tmp/promotion-frameworks
 ```
 
-Do not force an iOS 14 deployment target on all subprojects: the timing library
-uses the iOS 15 `CAFrameRateRange` API. Do not substitute the old prebuilt wrapper
+ProMotion requires iOS 15 or later. Do not substitute the old prebuilt wrapper
 from `Resources/GDFrameworks`: the runtime checks the corrected wrapper's version.
 
 ## Install and enable
@@ -80,8 +79,11 @@ Absolute private-bundle paths avoid LiveContainer host `@executable_path` ambigu
 The bounded Mach-O editor preserves ordinals, segments and code offsets, rejects
 insufficient header padding, and writes changed files atomically before signing.
 Disabling restores OpenGLES imports and retains unused frameworks to make retries
-safe. The display-link hook requests an 80–120 Hz range without overriding pause
-or private Core Animation classes. It loads directly before the game.
+safe. After the game loads, the launcher installs timing on Cocos's
+`CCDirectorCaller doCaller:` callback. The callback configures only the game
+display link using its public frame-rate property and requests an 80–120 Hz
+range. Pause, invalidation, UIKit display links, and private Core Animation
+classes are left to their original implementations.
 
 ## Validation and device checks
 
@@ -89,9 +91,13 @@ or private Core Animation classes. It loads directly before the game.
 python3 -m unittest discover -s tests -v
 ```
 
-28 host tests cover the source correction, Mach-O enable/disable, repeated setup,
+31 host tests cover the source corrections, Mach-O enable/disable, repeated setup,
 container relocation, FAT32/FAT64, payload preservation, insufficient header space,
-and malformed inputs. Handler-storage tests cover the 2.208 and 2.2091 layouts,
+and malformed inputs. A separate macOS job exercises the actual timing code with
+Apple's Objective-C runtime and simulated public UIKit properties. It checks
+original callback dispatch, ABI validation, 120/90/60 Hz, repeated installation,
+display-link recreation, pause/invalidation, and object lifetime. It does not
+exercise real Core Animation presentation. Handler-storage tests cover the 2.208 and 2.2091 layouts,
 missing/readonly/truncated sections and aligned offsets. The rewrite was also exercised on real bundled framework
 binaries and the released Geode 5.11.2 iOS library, including rollback. Earlier
 50,000 ASan/UBSan mutations and static C analysis passed.
@@ -107,6 +113,7 @@ Sources:
 - https://github.com/geode-sdk/geode/pull/1556
 - https://github.com/khanhduytran0/ANGLEGLKit
 - https://github.com/geode-sdk/ios-launcher/blob/main/LIVECONTAINER-INSTALL-GUIDE.md
+- https://github.com/geode-sdk/geode/blob/main/loader/include/Geode/cocos/platform/ios/CCDirectorCaller.mm
 
 ## JIT-less launch compatibility
 
@@ -141,9 +148,23 @@ directly instead of resolving `RTLD_NEXT` in a process containing other renderer
 Host tests check these exports against the actual bundled backend, and IPA
 verification rejects a wrapper that still depends on libEGL or native OpenGLES.
 
-Frame-rate setters use a per-thread reentrancy guard and one native setter per
-update. Bootstrap logs now distinguish libGLESv2, ANGLEGLKit, timing, and the game;
+Bootstrap logs distinguish libGLESv2, ANGLEGLKit, timing, and the game;
 each stage is flushed before loading. Loader errors and uncaught Objective-C
 exceptions are also written to the launcher's fixed log path. These changes
 address startup hazards found in the implementation; the precise phone crash
 cause and successful 120 Hz presentation still require a device retest.
+
+## Timing preload crash
+
+The 198860b phone log confirmed that libGLESv2 and the corrected renderer both
+loaded successfully, then stopped during the separate CAHighFPS preload. The
+game had not loaded yet. The log identifies that stage but does not distinguish
+dyld failure from execution of the timing constructor.
+
+CAHighFPS is no longer packaged or loaded. Timing is compiled into the launcher,
+installed explicitly after the game finishes loading, and applied when Cocos
+calls `doCaller:` with its CADisplayLink. It has no load-time constructor, TLS,
+generated block IMP, or hooks on Core Animation classes. Legacy CAHighFPS entries
+in the tweak folder are skipped. The IPA verifier rejects packages containing
+CAHighFPS and checks for the built-in timing implementation. The next phone test
+must confirm successful launch and actual frame presentation.

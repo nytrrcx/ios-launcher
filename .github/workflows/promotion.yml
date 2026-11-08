@@ -13,6 +13,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  timing-tests:
+    name: Test game timing with Apple Objective-C runtime
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test game callback, frame rates, pause and lifetime
+        run: python3 tests/run_timing_runtime.py
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
