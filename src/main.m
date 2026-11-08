@@ -673,7 +673,7 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
         [LogUtils flush];
         NSString *rendererPath = [bundlePath stringByAppendingPathComponent:@"Frameworks/ANGLEGLKit.framework/ANGLEGLKit"];
         dlerror();
-        void *renderer = dlopen(rendererPath.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);
+        void *renderer = dlopen(rendererPath.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL | RTLD_FIRST);
         if (!renderer) {
             const char *failure = dlerror();
             *path = oldPath;
@@ -689,6 +689,15 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
             *path = oldPath;
             return @"The ProMotion renderer lacks the direct EGL loader fix. Reinstall the updated launcher build.";
         }
+        const unsigned *directGL = (const unsigned *)dlsym(renderer, "GCGeodeGLDirectVersion");
+        if (!directGL || *directGL != 1 || !dlsym(renderer, "glBindFramebuffer") ||
+            !dlsym(renderer, "glRenderbufferStorageMultisampleAPPLE") ||
+            !dlsym(renderer, "glResolveMultisampleFramebufferAPPLE")) {
+            *path = oldPath;
+            return @"The renderer lacks direct GL entry points. Install the updated ProMotion launcher.";
+        }
+        AppLog(@"[ProMotion] Direct GL entry points verified, including framebuffer and Apple MSAA compatibility.");
+        [LogUtils flush];
         AppLog(@"[ProMotion] ANGLEGLKit loaded; game timing will be installed after the game loads.");
         [LogUtils flush];
     } else {
@@ -702,7 +711,8 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
 	AppLog(@"[invokeAppMain] Loading game: %@", appBundle.executablePath);
     [LogUtils flush];
 	dlerror();
-	void* appHandle = dlopen(appExecPath, RTLD_LAZY | RTLD_GLOBAL | RTLD_FIRST);
+    int bindingMode = [gcUserDefaults boolForKey:@"USE_MAX_FPS"] ? RTLD_NOW : RTLD_LAZY;
+	void* appHandle = dlopen(appExecPath, bindingMode | RTLD_GLOBAL | RTLD_FIRST);
 	appExecutableHandle = appHandle;
 	AppLog(@"[invokeAppMain] Opened binary handle.");
 	const char* dlerr = dlerror();

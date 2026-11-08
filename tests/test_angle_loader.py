@@ -1,5 +1,6 @@
 from pathlib import Path
 import importlib.util
+import json
 import shutil
 import struct
 import tempfile
@@ -73,6 +74,24 @@ class LoaderPatchTests(unittest.TestCase):
             patcher.patch(self.root)
         self.assertEqual((self.root / 'Makefile').read_bytes(), original)
         self.assertFalse((self.root / 'GeodeEGL.h').exists())
+
+    def test_real_game_imports_have_direct_definitions(self):
+        import re
+        patcher.patch(self.root)
+        required = set(json.loads((ROOT / 'tests/fixtures/gd-2.208-renderer-imports.json').read_text())['symbols'])
+        assembly = (self.root / 'GeodeGLForwarders.S').read_text()
+        provided = set(re.findall(r'^\.globl (_gl\w+)$', assembly, re.M))
+        targets = set(re.findall(r'    b (_GL_\w+)$', assembly, re.M))
+        actual = exports((ROOT / 'Resources/GDFrameworks/libGLESv2.framework/libGLESv2').read_bytes())
+        self.assertFalse(targets - actual)
+        provided |= {'_glGenFramebuffers', '_glGenRenderbuffers',
+            '_glRenderbufferStorageMultisampleAPPLE', '_glResolveMultisampleFramebufferAPPLE',
+            '_OBJC_CLASS_$_EAGLContext', '_kEAGLColorFormatRGB565', '_kEAGLColorFormatRGBA8',
+            '_kEAGLDrawablePropertyColorFormat', '_kEAGLDrawablePropertyRetainedBacking'}
+        self.assertEqual(len(required), 79)
+        self.assertFalse(required - provided)
+        self.assertIn('_glBindFramebuffer:\n    b _GL_BindFramebuffer', assembly)
+        self.assertNotIn('-reexport_framework', (self.root / 'Makefile').read_text())
 
     def test_repeated_patch_rejected_without_writing(self):
         patcher.patch(self.root)

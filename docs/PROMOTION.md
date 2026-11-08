@@ -91,7 +91,7 @@ classes are left to their original implementations.
 python3 -m unittest discover -s tests -v
 ```
 
-31 host tests cover the source corrections, Mach-O enable/disable, repeated setup,
+32 host tests cover the source corrections, Mach-O enable/disable, repeated setup,
 container relocation, FAT32/FAT64, payload preservation, insufficient header space,
 and malformed inputs. A separate macOS job exercises the actual timing code with
 Apple's Objective-C runtime and simulated public UIKit properties. It checks
@@ -168,3 +168,29 @@ generated block IMP, or hooks on Core Animation classes. Legacy CAHighFPS entrie
 in the tweak folder are skipped. The IPA verifier rejects packages containing
 CAHighFPS and checks for the built-in timing implementation. The next phone test
 must confirm successful launch and actual frame presentation.
+
+## Direct GL exports and game import coverage
+
+The next phone report passed game loading and timing installation, then stopped
+inside Cocos's framebuffer creation before the first display-link callback. The
+exported GeometryJump identified the last call as `glBindFramebuffer` at 0x3fcf84
+(return address 0x3fcf88). All SHA-1 and SHA-256 code-page hashes in the supplied
+file matched. The report's Invalid Page termination therefore does not by itself
+establish that the executable on disk has damaged code pages.
+
+The game imports 79 symbols from its renderer dependency. Two Apple MSAA functions
+were absent from the bundled backend. ANGLEGLKit now defines its public GL API
+with compiled arm64 tail branches to the backend's `GL_*` functions; it no longer
+depends on transitive GL re-exports. The first default framebuffer/renderbuffer
+allocation keeps the wrapper's existing special handling. Apple MSAA allocation
+forwards to ANGLE's allocation, and backbuffer resolve blits the current read
+framebuffer into the current window draw framebuffer at the EGL surface size.
+
+Only the 79 imported symbol names are recorded as regression metadata; the
+user-supplied game binaries are not part of the repository or Actions artifacts.
+The package check requires direct definitions for every one of those imports.
+A macOS dyld test exercises the generated arm64 bridges, including integer,
+floating-point, pointer and stack arguments, return values, and both Apple MSAA
+compatibility functions. ProMotion launches bind the game eagerly to surface
+unresolved imports before entering game main. Another device test is required to
+confirm whether this fixes the reported framebuffer crash.

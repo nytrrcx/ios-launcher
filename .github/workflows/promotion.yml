@@ -18,8 +18,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Test game callback, frame rates, pause and lifetime
         run: python3 tests/run_timing_runtime.py
+      - name: Test direct GL forwarding and Apple MSAA compatibility
+        run: python3 tests/run_gl_runtime.py
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 45

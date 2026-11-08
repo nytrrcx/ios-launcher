@@ -3,6 +3,7 @@
 from pathlib import Path
 import argparse
 import re
+import shutil
 
 
 def patch(root):
@@ -14,6 +15,10 @@ def patch(root):
         raise ValueError('Direct EGL binding is already installed; use a clean checkout')
     exports = (root / 'Frameworks/libGLESv2.framework/libGLESv2.tbd').read_text()
     names = set(re.findall(r'\b_EGL_(\w+)\b', exports))
+    gl_api = set(re.findall(r'\b_gl([A-Z]\w*)\b', exports))
+    gl_backend = set(re.findall(r'\b_GL_(\w+)\b', exports))
+    if not gl_api or gl_api - gl_backend:
+        raise ValueError(f'Missing direct GL exports: {sorted(gl_api - gl_backend)}')
     used = set()
     for source in root.glob('*.mm'):
         used.update(re.findall(r'\begl([A-Z]\w*)\s*\(', source.read_text()))
@@ -23,6 +28,11 @@ def patch(root):
     if makefile.count(anchor) != 1 or makefile.count('ANGLEGLKit_CFLAGS = ') != 1:
         raise ValueError('Unexpected ANGLEGLKit build configuration')
     makefile = makefile.replace(anchor, 'ANGLEGLKit_FRAMEWORKS = libGLESv2')
+    if makefile.count('-Wl,-reexport_framework,libGLESv2') != 1:
+        raise ValueError('Unexpected GL re-export configuration')
+    makefile = makefile.replace('-Wl,-reexport_framework,libGLESv2', '')
+    makefile = makefile.replace('ANGLEGLKit_FILES = ',
+        'ANGLEGLKit_FILES = GeodeGLForwarders.S GeodeGLCompat.c ')
     makefile = makefile.replace('ANGLEGLKit_CFLAGS = ',
                                'ANGLEGLKit_CFLAGS = -include $(THEOS_PROJECT_DIR)/GeodeEGL.h ')
     # Match the minimum ABI version of the OpenGLES dependency being replaced.
@@ -46,7 +56,15 @@ def patch(root):
         'extern void GL_GenRenderbuffers(GLsizei n, GLuint *renderbuffers);\n\n'
         'void (*orig_glGenFramebuffers)')
     kit += '\n__attribute__((used, visibility("default"))) unsigned GCGeodeEGLDirectVersion = 1;\n'
+    kit += '__attribute__((used, visibility("default"))) unsigned GCGeodeGLDirectVersion = 1;\n'
+    # Signed, static tail branches preserve every argument and return register.
+    # Clients now bind to real wrapper definitions, not transitive re-exports.
+    assembly = ['.text', '.p2align 2']
+    for name in sorted(gl_api - {'GenFramebuffers', 'GenRenderbuffers'}):
+        assembly += [f'.globl _gl{name}', f'_gl{name}:', f'    b _GL_{name}']
     header.write_text('\n'.join(lines) + '\n')
+    (root / 'GeodeGLForwarders.S').write_text('\n'.join(assembly) + '\n')
+    shutil.copyfile(Path(__file__).with_name('angle_gl_compat.c'), root / 'GeodeGLCompat.c')
     (root / 'Makefile').write_text(makefile)
     (root / 'MGLKit.m').write_text(kit)
 

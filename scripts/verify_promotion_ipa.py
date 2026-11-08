@@ -20,6 +20,23 @@ def dependencies(binary):
         cursor += length
     return result
 
+
+def definitions(binary):
+    cursor = 32
+    for _ in range(struct.unpack_from('<I', binary, 16)[0]):
+        kind, length = struct.unpack_from('<II', binary, cursor)
+        if kind == 2:
+            offset, count, strings, size = struct.unpack_from('<4I', binary, cursor + 8)
+            names = set()
+            for i in range(count):
+                name, flags, _, _, _ = struct.unpack_from('<IBBHQ', binary, offset + i * 16)
+                if name and not flags & 0xe0 and flags & 0xe and flags & 1:
+                    start = strings + name
+                    names.add(binary[start:binary.index(b'\0', start, strings + size)].decode())
+            return names
+        cursor += length
+    return set()
+
 packages = Path(sys.argv[1])
 ipas = list(packages.glob('*.ipa'))
 if len(ipas) != 1:
@@ -38,6 +55,13 @@ with zipfile.ZipFile(ipa) as archive:
         if name == 'ANGLEGLKit':
             if b'GCGeodeEGLDirectVersion' not in binary:
                 raise SystemExit('IPA renderer does not include direct EGL binding')
+            if b'GCGeodeGLDirectVersion' not in binary:
+                raise SystemExit('IPA renderer does not include direct GL exports')
+            fixture = Path(__file__).resolve().parents[1] / 'tests/fixtures/gd-2.208-renderer-imports.json'
+            required = set(json.loads(fixture.read_text())['symbols'])
+            missing = required - definitions(binary)
+            if missing:
+                raise SystemExit(f'Renderer is missing direct game imports: {sorted(missing)}')
             imports = dependencies(binary)
             if any('/libEGL.framework/' in path or '/OpenGLES.framework/' in path for path in imports):
                 raise SystemExit('Renderer still depends on an executable-path EGL loader or native OpenGLES')
@@ -57,6 +81,7 @@ provenance = {
     'stencil_fix_version': 1,
     'jitless_storage': 'derived-from-game-mach-o',
     'egl_binding': 'direct-libglesv2',
+    'gl_binding': 'direct-forwarders-with-apple-msaa',
     'timing': 'launcher-game-callback',
     'ipa_sha256': hashlib.sha256(ipa.read_bytes()).hexdigest(),
     'device_tested': False,

@@ -14,5 +14,7 @@ if b'GCGeodeStencilFixVersion' not in (source / 'ANGLEGLKit').read_bytes():
     raise SystemExit('Built renderer is missing the stencil-fix marker')
 if b'GCGeodeEGLDirectVersion' not in (source / 'ANGLEGLKit').read_bytes():
     raise SystemExit('Built renderer is missing direct EGL binding')
+if b'GCGeodeGLDirectVersion' not in (source / 'ANGLEGLKit').read_bytes():
+    raise SystemExit('Built renderer is missing direct GL exports')
 shutil.copytree(source, destination / 'ANGLEGLKit.framework', dirs_exist_ok=True)
 print('Collected renderer:', source)
