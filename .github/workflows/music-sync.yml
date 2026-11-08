@@ -1,0 +1,31 @@
+name: ProMotion Music Sync
+on:
+  push:
+    branches: [promotion-120hz]
+    paths: ['MusicSync/**', 'tests/test_music_sync.py', 'tests/music_sync.cpp', '.github/workflows/music-sync.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  music-sync:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test clock drift, offsets, retries, seeks and frame-rate changes
+        run: python3 -m unittest discover -s tests -p test_music_sync.py -v
+      - uses: geode-sdk/build-geode-mod@61a56c697aea9655e3f31c6c1b83870431f30434
+        id: build
+        with:
+          sdk: v5.11.2
+          target: iOS
+          path: MusicSync
+          bindings-ref: 28b0e0d870f3f230a85a8c47a00093d37ebb1124
+          use-lto: false
+      - name: Verify iOS package
+        run: python3 scripts/verify_music_sync.py "${{ steps.build.outputs.build-output }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ProMotion-Music-Sync-iOS
+          path: ${{ steps.build.outputs.build-output }}
+          retention-days: 14

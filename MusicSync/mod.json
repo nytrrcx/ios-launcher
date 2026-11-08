@@ -1,0 +1,18 @@
+{
+  "geode": "5.11.2",
+  "gd": { "ios": "2.2081" },
+  "version": "v0.1.0",
+  "id": "nytrrcx.promotion_music_sync",
+  "name": "ProMotion Music Sync",
+  "developer": "nytrrcx",
+  "description": "Corrects gradual main-song drift in classic levels while keeping CBF enabled.",
+  "tags": ["enhancement", "utility"],
+  "settings": {
+    "enabled": {
+      "name": "Auto Music Sync",
+      "description": "Keep the main song aligned with level time when ProMotion is enabled. Supports classic levels without audio triggers, including practice with music sync. Preserves the starting song offset.",
+      "type": "bool",
+      "default": true
+    }
+  }
+}
