@@ -1,0 +1,67 @@
+name: ProMotion IPA
+
+on:
+  push:
+    branches: [promotion-120hz]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promotion-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Run host regression tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang curl git libtinfo5 rsync unzip xz-utils
+      - name: Install Theos and iOS toolchain
+        run: |
+          set -euo pipefail
+          export THEOS="$RUNNER_TEMP/theos"
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+          git clone --depth=1 --recurse-submodules --shallow-submodules https://github.com/theos/theos.git "$THEOS"
+          curl -fL --retry 3 https://github.com/L1ghtmann/llvm-project/releases/download/test-210562a/iOSToolchain-x86_64.tar.xz -o "$RUNNER_TEMP/toolchain.tar.xz"
+          tar -xJf "$RUNNER_TEMP/toolchain.tar.xz" -C "$THEOS/toolchain"
+          test -x "$THEOS/toolchain/linux/iphone/bin/clang"
+          "$THEOS/bin/install-sdk" iPhoneOS16.5
+      - name: Build ANGLEGLKit with a depth/stencil buffer
+        run: |
+          set -euo pipefail
+          python3 scripts/patch_angle_stencil.py vendor/ANGLEGLKit
+          make -C vendor/ANGLEGLKit stage FINALPACKAGE=1 STRIP=0 TARGET=iphone:clang:16.5:15.0
+          export PROMOTION_FRAMEWORKS_DIR="$RUNNER_TEMP/promotion-frameworks"
+          mkdir -p "$PROMOTION_FRAMEWORKS_DIR"
+          cp -R Resources/GDFrameworks/libEGL.framework Resources/GDFrameworks/libGLESv2.framework "$PROMOTION_FRAMEWORKS_DIR/"
+          python3 scripts/collect_angle.py vendor/ANGLEGLKit/.theos "$PROMOTION_FRAMEWORKS_DIR"
+          echo "PROMOTION_FRAMEWORKS_DIR=$PROMOTION_FRAMEWORKS_DIR" >> "$GITHUB_ENV"
+      - name: Build launcher IPA
+        env:
+          GD_DOWNLOAD: ${{ secrets.GD_DOWNLOAD }}
+          KEYONE: ${{ secrets.KEYONE }}
+          KEYTWO: ${{ secrets.KEYTWO }}
+        run: |
+          set -euo pipefail
+          python3 scripts/prepare_metadata.py
+          make package FINALPACKAGE=1 STRIP=0 TARGET=iphone:clang:16.5:14.0 PROMOTION_FRAMEWORKS_DIR="$PROMOTION_FRAMEWORKS_DIR"
+          python3 scripts/verify_promotion_ipa.py packages
+      - name: Upload IPA and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: Geode-ProMotion-LiveContainer
+          path: |
+            packages/*.ipa
+            packages/promotion-build.json
+          if-no-files-found: error
+          retention-days: 14

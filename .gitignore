@@ -16,5 +16,7 @@ build-debug.sh
 .git
 /.vscode
 sec/
+__pycache__/
+*.pyc
 macho-patcher/venv/
 Resources/Frameworks/OpenSSL.framework

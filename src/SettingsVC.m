@@ -21,6 +21,7 @@
 #include <spawn.h>
 
 #import "Patcher.h"
+#import "ProMotion.h"
 
 extern NSString *lcAppUrlScheme;
 extern NSString *g_commitHash;
@@ -587,13 +588,13 @@ extern NSString *g_commitHash;
 			}
 			cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
 		}],
-		[Setting create:@"Enable 120hz (Experimental)".loc type:SettingTypeToggle disabled:^BOOL() {
-			//return ![Utils isSandboxed] || [[Utils getPrefs] integerForKey:@"ENTERPRISE_MODE"];
-			return ![Utils isSandboxed] || ![Utils isDevCert];
-			// return YES;
-		} visible:^BOOL() {
-			return [[Utils getPrefs] boolForKey:@"FORCE_ANGLE"];
-		} prefsKey:@"USE_MAX_FPS" switchTag:20 action:nil custom:nil],
+        [Setting create:@"ProMotion 120 Hz (Experimental)" type:SettingTypeToggle disabled:^BOOL() {
+            // Always allow switching off, including after a failed setup or device migration.
+            return ![[Utils getPrefs] boolForKey:@"USE_MAX_FPS"] && [ProMotion unavailableReason] != nil;
+        } visible:nil prefsKey:@"USE_MAX_FPS" switchTag:20 action:nil custom:nil],
+        [Setting simpleCreate:@"About ProMotion 120 Hz" type:SettingTypeButton action:^{
+            [Utils showNotice:self title:[ProMotion unavailableReason] ?: @"Requests up to 120 Hz using ANGLE/Metal. Applies on the next launch. Some mods may render differently. iOS may reduce the refresh rate to save power or control temperature."];
+        } custom:nil],
 	];
 	NSArray<Setting*>* jit = @[
 		[Setting simpleCreate:@"jit.jit-enabler".loc type:SettingTypeCustomVal1 action:^{
@@ -1520,107 +1521,33 @@ extern NSString *g_commitHash;
 		[Utils toggleKey:@"MANUAL_IMPORT_CERT"];
 		[self.tableView reloadData];
 		break;
-	case 20:
-		if ([sender isOn]) {
-			if ([UIScreen mainScreen].maximumFramesPerSecond <= 60 && ![[Utils getPrefs] boolForKey:@"FORCE_ANGLE"]) {
-				[Utils showError:self title:@"Your device does not support refresh rates above 60 Hz (ProMotion)! You must own a Pro device (anything that is iPhone 13 Pro or higher. iPhone 12 Pro does not have ProMotion) or another device that supports >60 Hz.\n\nIf you've enabled \"Limit Frame Rate\", disable it by opening the Settings app and navigating to Accessibility -> Motion -> turn off Limit Frame Rate. If that option isn't available, your device doesn't support ProMotion." error:nil];
-				[self.tableView reloadData];
-				return;
-			}
-			UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Warning" message:@"Enabling this option is experimental, as it changes the rendering engine Geometry Dash uses to support the maximum refresh rate. While you may not notice any changes if you don't have mods, some mods will not function properly with this setting enabled. Only enable this if you do not care about graphical differences.\n\nWould you like to enable anyways? You can always disable if something goes wrong.".loc preferredStyle:UIAlertControllerStyleAlert];
-			UIAlertAction* okAction = [UIAlertAction actionWithTitle:@"Enable" style:UIAlertActionStyleDestructive handler:^(UIAlertAction* _Nonnull action) {
-				[Utils copyOrigBinary:^(BOOL isSuccess, NSString *errorStr) {
-					if (!isSuccess) {
-						[Utils showError:self title:[NSString stringWithFormat:@"Failed to copy Geometry Dash: %@", errorStr] error:nil];
-						[self.tableView reloadData];
-						return;
-					}
-					NSFileManager* fm = [NSFileManager defaultManager];
-					NSURL* bundlePath = [[LCPath bundlePath] URLByAppendingPathComponent:[Utils gdBundleName]];
-					NSString *frameworksPath = [bundlePath URLByAppendingPathComponent:@"Frameworks"].path;
-					BOOL isDir;
-					if (![fm fileExistsAtPath:[frameworksPath stringByAppendingPathComponent:@"ANGLEGLKit.framework"] isDirectory:&isDir]) {
-						if (![fm fileExistsAtPath:frameworksPath isDirectory:&isDir]) {
-							[fm createDirectoryAtPath:frameworksPath withIntermediateDirectories:YES attributes:nil error:nil];
-						}
-						AppLog(@"Now copying Frameworks dir...");
-						AppLog(@"Dir is %@", [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Frameworks/ANGLEGLKit.framework"]);
-						[fm copyItemAtPath:[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Frameworks/ANGLEGLKit.framework"] toPath:[frameworksPath stringByAppendingPathComponent:@"ANGLEGLKit.framework"] error:nil];
-						[fm copyItemAtPath:[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Frameworks/libEGL.framework"] toPath:[frameworksPath stringByAppendingPathComponent:@"libEGL.framework"] error:nil];
-						[fm copyItemAtPath:[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Frameworks/libGLESv2.framework"] toPath:[frameworksPath stringByAppendingPathComponent:@"libGLESv2.framework"] error:nil];
-						if ([[Utils getPrefs] boolForKey:@"ENTERPRISE_MODE"]) {
-							NSString* tweakLoaderPath = [bundlePath URLByAppendingPathComponent:@"CAHighFPS.dylib"].path;
-							if (![fm fileExistsAtPath:tweakLoaderPath]) {
-								NSString* target = [NSBundle.mainBundle.privateFrameworksPath stringByAppendingPathComponent:@"CAHighFPS.dylib"];
-								[fm copyItemAtPath:target toPath:tweakLoaderPath error:nil];
-							}
-						}
-					} else {
-						AppLog(@"Frameworks dir already exists, skipping...");
-					}
-					AppLog(@"Patching GD with new load commands...");
-					NSString* execPath = [bundlePath URLByAppendingPathComponent:@"GeometryJump"].path;
-					NSString* error = LCParseMachO(execPath.UTF8String, false, ^(const char* path, struct mach_header_64* header, int fd, void* filePtr) {
-						LCPatchExecSlice(path, header, [[Utils getPrefs] boolForKey:@"ENTERPRISE_MODE"], YES);
-					});
-					if (error) {
-						[Utils showError:self title:[NSString stringWithFormat:@"Failed to patch Geometry Dash: %@", error] error:nil];
-						[self.tableView reloadData];
-						return;
-					}
-					[Utils toggleKey:@"USE_MAX_FPS"];
-					[self.tableView reloadData];
-				}];
-			}];
-			UIAlertAction* cancelAction = [UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil];
-			[alert addAction:okAction];
-			[alert addAction:cancelAction];
-			[self presentViewController:alert animated:YES completion:nil];
-		} else {
-			[Utils toggleKey:@"USE_MAX_FPS"];
-			NSFileManager* fm = [NSFileManager defaultManager];
-			NSURL* bundlePath = [[LCPath bundlePath] URLByAppendingPathComponent:[Utils gdBundleName]];
-
-			NSString *frameworksPath = [bundlePath URLByAppendingPathComponent:@"Frameworks"].path;
-			BOOL isDir;
-			if ([fm fileExistsAtPath:frameworksPath isDirectory:&isDir]) {
-				if (isDir) {
-					if ([fm fileExistsAtPath:[frameworksPath stringByAppendingPathComponent:@"ANGLEGLKit.framework"] isDirectory:&isDir]) {
-						if (isDir) {
-							AppLog(@"Now deleting files...");
-							[fm removeItemAtPath:[frameworksPath stringByAppendingPathComponent:@"ANGLEGLKit.framework"] error:nil];
-							[fm removeItemAtPath:[frameworksPath stringByAppendingPathComponent:@"libEGL.framework"] error:nil];
-							[fm removeItemAtPath:[frameworksPath stringByAppendingPathComponent:@"libGLESv2.framework"] error:nil];
-						}
-					}
-				}
-			} else {
-				AppLog(@"Frameworks dir doesn't exist, skipping...");
-			}
-
-			if (![fm fileExistsAtPath:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"].path]) {
-				AppLog(@"Not restoring binary.");
-			} else {
-				NSError* err;
-				[fm removeItemAtURL:[bundlePath URLByAppendingPathComponent:@"GeometryJump"] error:&err];
-				if (err) {
-					AppLog(@"Couldn't remove patched binary: %@", err);
-				} else {
-					[fm copyItemAtURL:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] toURL:[bundlePath URLByAppendingPathComponent:@"GeometryJump"] error:&err];
-					if (err) {
-						AppLog(@"Couldn't copy binary: %@", err);
-					} else {
-						[[Utils getPrefs] setObject:@"NO" forKey:@"PATCH_CHECKSUM"];
-						AppLog(@"Restored original binary.");
-					}
-				}
-			}
-			[Patcher patchGeode:^(BOOL success, NSString *error) {
-				AppLog(@"Patched Geode (Success: %@, Error: %@)", (success) ? @"YES" : @"NO", error);
-			}];
-		}
-		[self.tableView reloadData];
-		break;
+    case 20: {
+        if (![sender isOn]) {
+            [[Utils getPrefs] setBool:NO forKey:@"USE_MAX_FPS"];
+            [[Utils getPrefs] setObject:@"NO" forKey:@"PATCH_CHECKSUM"];
+            [self.tableView reloadData];
+            break;
+        }
+        NSString *reason = [ProMotion unavailableReason];
+        if (reason) {
+            [Utils showError:self title:reason error:nil];
+            [self.tableView reloadData];
+            break;
+        }
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"ProMotion 120 Hz"
+            message:@"Use the experimental ANGLE/Metal renderer on the next launch? Some mods may have graphical issues. You can disable this option to restore OpenGLES. In LiveContainer, disable Low Power Mode and Limit Frame Rate, and use a LiveContainer build with ProMotion enabled."
+            preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Enable" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [[Utils getPrefs] setBool:YES forKey:@"USE_MAX_FPS"];
+            [[Utils getPrefs] setObject:@"NO" forKey:@"PATCH_CHECKSUM"];
+            [self.tableView reloadData];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
+            [self.tableView reloadData];
+        }]];
+        [self presentViewController:alert animated:YES completion:nil];
+        break;
+    }
 	case 21:
 		[Utils toggleKey:@"FORCE_TXM"];
 		break;

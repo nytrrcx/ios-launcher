@@ -15,7 +15,7 @@ else
 Geode_CODESIGN_FLAGS = -Sentitlements.xml
 endif
 
-Geode_FILES = $(wildcard src/*.m) $(wildcard src/*.mm) $(wildcard src/views/*.m) $(wildcard src/components/*.m) $(wildcard src/LCUtils/*.m) fishhook/fishhook.c $(wildcard MSColorPicker/MSColorPicker/*.m) $(wildcard GCDWebServer/GCDWebServer/*/*.m)
+Geode_FILES = $(wildcard src/*.c) $(wildcard src/*.m) $(wildcard src/*.mm) $(wildcard src/views/*.m) $(wildcard src/components/*.m) $(wildcard src/LCUtils/*.m) fishhook/fishhook.c $(wildcard MSColorPicker/MSColorPicker/*.m) $(wildcard GCDWebServer/GCDWebServer/*/*.m)
 Geode_FRAMEWORKS = UIKit CoreGraphics Security
 #Geode_CFLAGS = -fobjc-arc -IGCDWebServer/GCDWebServer/Core -IGCDWebServer/GCDWebServer/Requests -IGCDWebServer/GCDWebServer/Responses -Wno-deprecated-declarations
 Geode_CFLAGS = -fobjc-arc -IGCDWebServer/GCDWebServer/Core -IGCDWebServer/GCDWebServer/Requests -IGCDWebServer/GCDWebServer/Responses
@@ -30,6 +30,24 @@ $(APPLICATION_NAME)_LDFLAGS = -e _GeodeMain -rpath @loader_path/Frameworks
 include $(THEOS_MAKE_PATH)/application.mk
 SUBPROJECTS += ZSign TweakLoader WebServerLib PlatformConsole TestJITLess EnterpriseLoader CAHighFPS
 include $(THEOS_MAKE_PATH)/aggregate.mk
+
+
+# Supply device arm64 builds of ANGLEGLKit and its ANGLE dependencies together.
+# Frameworks are staged before the IPA is signed/imported into LiveContainer.
+ifneq ($(strip $(PROMOTION_FRAMEWORKS_DIR)),)
+before-stage::
+	@for name in ANGLEGLKit libEGL libGLESv2; do \
+		test -f "$(PROMOTION_FRAMEWORKS_DIR)/$$name.framework/$$name" || \
+		{ echo "Missing ProMotion dependency: $$name.framework"; exit 1; }; \
+	done
+
+after-stage::
+	@mkdir -p "$(THEOS_STAGING_DIR)/Applications/Geode.app/Frameworks"
+	@for name in ANGLEGLKit libEGL libGLESv2; do \
+		rm -rf "$(THEOS_STAGING_DIR)/Applications/Geode.app/Frameworks/$$name.framework"; \
+		cp -R "$(PROMOTION_FRAMEWORKS_DIR)/$$name.framework" "$(THEOS_STAGING_DIR)/Applications/Geode.app/Frameworks/" || exit 1; \
+	done
+endif
 
 
 after-package::

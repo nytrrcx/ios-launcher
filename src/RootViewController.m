@@ -1,3 +1,4 @@
+#import "ProMotion.h"
 #import "EnterpriseCompare.h"
 #import "GeodeInstaller.h"
 #import "LCUtils/GCSharedUtils.h"
@@ -30,6 +31,7 @@ extern NSString* g_commitHash;
 #define LOCAL_URL "http://192.168.1.22:3000/Geometry-2.208.ipa"
 
 @interface RootViewController ()
+- (void)signPreparedApp:(BOOL)forceSign completionHandler:(void (^)(BOOL success, NSString* error))completionHandler;
 
 @property(nonatomic, strong) ProgressBar* progressBar;
 @property(nonatomic, strong) NSTimer* launchTimer;
@@ -655,6 +657,7 @@ extern NSString* g_commitHash;
 							LCAppInfo* app = [[LCAppInfo alloc] initWithBundlePath:[[LCPath bundlePath] URLByAppendingPathComponent:@"com.robtop.geometryjump.app"].path];
 							[Patcher patchGeode:^(BOOL success, NSString *error) {
 								AppLog(@"Patched Geode (Success: %@, Error: %@)", (success) ? @"YES" : @"NO", error);
+								if (!success) return completionHandler(NO, error);
 								[app patchExecAndSignIfNeedWithCompletionHandler:^(BOOL signSuccess, NSString* signError) {
 									if (signError)
 										return completionHandler(NO, signError);
@@ -698,6 +701,7 @@ extern NSString* g_commitHash;
 							LCAppInfo* app = [[LCAppInfo alloc] initWithBundlePath:[[LCPath bundlePath] URLByAppendingPathComponent:@"com.robtop.geometryjump.app"].path];
 							[Patcher patchGeode:^(BOOL success, NSString *error) {
 								AppLog(@"Patched Geode (Success: %@, Error: %@)", (success) ? @"YES" : @"NO", error);
+								if (!success) return completionHandler(NO, error);
 								[app patchExecAndSignIfNeedWithCompletionHandler:^(BOOL signSuccess, NSString* signError) {
 									if (signError)
 										return completionHandler(NO, signError);
@@ -731,9 +735,19 @@ extern NSString* g_commitHash;
 }
 
 - (void)signApp:(BOOL)forceSign completionHandler:(void (^)(BOOL success, NSString* error))completionHandler {
+    NSError *rendererError = nil;
+    if (![ProMotion prepare:&rendererError]) return completionHandler(NO, rendererError.localizedDescription);
+    forceSign = forceSign || [[Utils getPrefs] boolForKey:@"PROMOTION_NEEDS_SIGN"];
+    [self signPreparedApp:forceSign completionHandler:^(BOOL success, NSString *error) {
+        if (success) [[Utils getPrefs] setBool:NO forKey:@"PROMOTION_NEEDS_SIGN"];
+        completionHandler(success, error);
+    }];
+}
+- (void)signPreparedApp:(BOOL)forceSign completionHandler:(void (^)(BOOL success, NSString* error))completionHandler {
 	if (![[Utils getPrefs] boolForKey:@"JITLESS"] && ![[Utils getPrefs] boolForKey:@"FORCE_PATCHING"] && ![[Utils getPrefs] integerForKey:@"FORCE_CERT_JIT"]) {
 		return [Patcher patchGeode:^(BOOL success, NSString *error) {
 			AppLog(@"Patched Geode (Success: %@, Error: %@)", (success) ? @"YES" : @"NO", error);
+			if (!success) return completionHandler(NO, error);
 			return completionHandler(YES, nil);
 		}];
 	}
@@ -812,6 +826,7 @@ extern NSString* g_commitHash;
 							LCAppInfo* app = [[LCAppInfo alloc] initWithBundlePath:[[LCPath bundlePath] URLByAppendingPathComponent:@"com.robtop.geometryjump.app"].path];
 							[Patcher patchGeode:^(BOOL success, NSString *error) {
 								AppLog(@"Patched Geode (Success: %@, Error: %@)", (success) ? @"YES" : @"NO", error);
+								if (!success) return completionHandler(NO, error);
 								[app patchExecAndSignIfNeedWithCompletionHandler:^(BOOL signSuccess, NSString* signError) {
 									if (signError)
 										return completionHandler(NO, signError);
@@ -861,6 +876,7 @@ extern NSString* g_commitHash;
 							LCAppInfo* app = [[LCAppInfo alloc] initWithBundlePath:[[LCPath bundlePath] URLByAppendingPathComponent:@"com.robtop.geometryjump.app"].path];
 							[Patcher patchGeode:^(BOOL success, NSString *error) {
 								AppLog(@"Patched Geode (Success: %@, Error: %@)", (success) ? @"YES" : @"NO", error);
+								if (!success) return completionHandler(NO, error);
 								[app patchExecAndSignIfNeedWithCompletionHandler:^(BOOL signSuccess, NSString* signError) {
 									if (signError)
 										return completionHandler(NO, signError);

@@ -492,19 +492,7 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
 			}
 		}
 
-		NSString* caHighFPSPath = [tweakFolder stringByAppendingPathComponent:@"CAHighFPS.dylib"];
-		if ([gcUserDefaults boolForKey:@"USE_MAX_FPS"]) {
-			//loadFramework(@"ANGLEGLKit");
-			//loadFramework(@"libEGL");
-			//loadFramework(@"libGLESv2");
-			if (![fm fileExistsAtPath:caHighFPSPath]) {
-				AppLog(@"[invokeAppMain] Creating CAHighFPS.dylib symlink");
-				remove(caHighFPSPath.UTF8String);
-				NSString* target = [NSBundle.mainBundle.privateFrameworksPath stringByAppendingPathComponent:@"CAHighFPS.dylib"];
-				symlink(target.UTF8String, caHighFPSPath.UTF8String);
-			}
-			setenv("ANGLEGLKit", "1", 1);
-		}
+
 	} else {
 		AppLog(@"[invokeAppMain] Couldn't find tweak folder!");
 	}
@@ -662,6 +650,34 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
 	// NSFMGuestHooksInit();
 	// initDead10ccFix();
 	//  UIAGuestHooksInit();
+
+    // Load directly: LiveContainer must have its own TweakLoader injection disabled.
+    // This also handles a game whose TweakLoader dependency is not loaded until dlopen below.
+    if ([gcUserDefaults boolForKey:@"USE_MAX_FPS"]) {
+        NSString *rendererPath = [bundlePath stringByAppendingPathComponent:@"Frameworks/ANGLEGLKit.framework/ANGLEGLKit"];
+        dlerror();
+        void *renderer = dlopen(rendererPath.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);
+        if (!renderer) {
+            const char *failure = dlerror();
+            *path = oldPath;
+            return [NSString stringWithFormat:@"Cannot load ProMotion renderer: %s", failure ?: "unknown error"];
+        }
+        const unsigned *stencilFix = (const unsigned *)dlsym(renderer, "GCGeodeStencilFixVersion");
+        if (!stencilFix || *stencilFix != 1) {
+            *path = oldPath;
+            return @"This ANGLEGLKit build lacks the stencil-buffer fix. Reinstall the ProMotion launcher build.";
+        }
+        setenv("ANGLEGLKit", "1", 1);
+        NSString *timingLibrary = [gcMainBundle.privateFrameworksPath stringByAppendingPathComponent:@"CAHighFPS.dylib"];
+        dlerror();
+        if (!dlopen(timingLibrary.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL)) {
+            const char *failure = dlerror();
+            *path = oldPath;
+            return [NSString stringWithFormat:@"Cannot load ProMotion timing: %s", failure ?: "unknown error"];
+        }
+    } else {
+        unsetenv("ANGLEGLKit");
+    }
 
 	// Preload executable to bypass RT_NOLOAD
 	uint32_t appIndex = _dyld_image_count();

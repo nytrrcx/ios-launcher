@@ -6,7 +6,8 @@ LIBRARY_NAME = CAHighFPS
 #TWEAK_NAME = CAHighFPS
 
 CAHighFPS_FILES = Tweak.x
-CAHighFPS_CFLAGS = -objc-arc
+CAHighFPS_CFLAGS = -fobjc-arc
+CAHighFPS_FRAMEWORKS = UIKit QuartzCore
 CAHighFPS_INSTALL_PATH = /Applications/Geode.app/Frameworks
 
 #include $(THEOS_MAKE_PATH)/tweak.mk

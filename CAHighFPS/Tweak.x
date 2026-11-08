@@ -1,80 +1,48 @@
-// Code by Nathan
-// https://github.com/verygenericname
-
+// Request ProMotion timing without interfering with pause/background lifecycle.
 %config(generator = internal);
-#import <objc/runtime.h>
-#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
-#import <dlfcn.h>
-//#import <CydiaSubstrate/CydiaSubstrate.h>
+#include <stdlib.h>
+#include <string.h>
 
-%hook CADynamicFrameRateSource
-
--(void)setPaused:(BOOL)arg1 {
-    //
+static NSInteger requestedFPS(void) {
+    return MIN(120, MAX(1, UIScreen.mainScreen.maximumFramesPerSecond));
 }
 
--(BOOL)isPaused {
-    return NO;
-}
-
-- (void)setPreferredFrameRateRange:(CAFrameRateRange)range {
-    range.minimum = 120;
-    range.preferred = 120;
-    range.maximum = 120;
+%group ProMotionTiming
+%hook CADisplayLink
+- (void)addToRunLoop:(NSRunLoop*)runLoop forMode:(NSRunLoopMode)mode {
+    // Configure even clients that never call a frame-rate setter (Cocos defaults).
+    if (@available(iOS 15.0, *)) {
+        float fps = (float)requestedFPS();
+        self.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80.0f, fps), fps, fps);
+    } else {
+        self.preferredFramesPerSecond = requestedFPS();
+    }
     %orig;
 }
-
--(void)setHighFrameRateReasons:(const unsigned*)arg1 count:(unsigned long long)arg2 {
-    //
+- (void)setPreferredFrameRateRange:(CAFrameRateRange)range {
+    float fps = (float)requestedFPS();
+    %orig(CAFrameRateRangeMake(MIN(80.0f, fps), fps, fps));
 }
-
-/*- (double)commitDeadline { // are these really needed?
-    double vsyncInterval = 1.0 / 120.0;
-    double now = CACurrentMediaTime();
-    double nextVsync = ceil(now / vsyncInterval) * vsyncInterval;
-    
-    return nextVsync;
+- (void)setPreferredFramesPerSecond:(NSInteger)fps {
+    %orig(requestedFPS());
 }
-
-- (double)commitDeadlineAfterTimestamp:(double)arg1 { // ^
-    double vsyncInterval = 1.0 / 120.0;
-    double now = CACurrentMediaTime();
-    double nextVsync = ceil(now / vsyncInterval) * vsyncInterval;
-    
-    return nextVsync;
-}*/
-
-%end
-
-%hook CADisplayLink
--(void)setPaused:(BOOL)arg1 {
-    //
-}
-
--(BOOL)isPaused {
-    return NO;
-}
-
 - (void)setFrameInterval:(NSInteger)interval {
     %orig(1);
-    if ([self respondsToSelector:@selector(setPreferredFramesPerSecond:)])
-        self.preferredFramesPerSecond = 120;
+    if (@available(iOS 15.0, *)) {
+        float fps = (float)requestedFPS();
+        self.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80.0f, fps), fps, fps);
+    } else {
+        self.preferredFramesPerSecond = requestedFPS();
+    }
 }
-
-- (void)setPreferredFrameRateRange:(CAFrameRateRange)range {
-    range.minimum = 120;
-    range.preferred = 120;
-    range.maximum = 120;
-    %orig;
-}
-
-- (void)setPreferredFramesPerSecond:(NSInteger)fps {
-    %orig(120);
-}
-
--(void)setHighFrameRateReasons:(const unsigned*)arg1 count:(unsigned long long)arg2 {
-    //
-}
-
 %end
+%end
+
+%ctor {
+    const char *enabled = getenv("ANGLEGLKit");
+    if (enabled && !strcmp(enabled, "1") && UIScreen.mainScreen.maximumFramesPerSecond > 60) {
+        %init(ProMotionTiming);
+    }
+}
