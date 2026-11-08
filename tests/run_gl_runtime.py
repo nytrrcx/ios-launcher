@@ -18,14 +18,23 @@ with tempfile.TemporaryDirectory(prefix='geode-gl-') as directory:
     shutil.copytree(root / 'vendor/ANGLEGLKit', source)
     patcher.patch(source)
     targets = set(re.findall(r'    b _GL_(\w+)', (source / 'GeodeGLForwarders.S').read_text()))
-    custom = {'BindFramebuffer', 'Uniform4f', 'TexImage2D', 'GetError', 'GetString',
+    custom = {'BindFramebuffer', 'Uniform4f', 'TexImage2D', 'GetError', 'GetString', 'GetIntegerv',
               'RenderbufferStorageMultisampleANGLE', 'BlitFramebufferANGLE'}
     backend = r'''
 #include <assert.h>
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 static int calls;
+static unsigned renderbuffer;
 int GCBackendCalls(void) { return calls; }
+void GCSetRenderbuffer(unsigned value) { renderbuffer = value; }
+void GL_GetIntegerv(GLenum name, GLint *value) {
+    assert(name == GL_RENDERBUFFER_BINDING); *value = renderbuffer;
+}
+void GL_GetRenderbufferParameteriv(GLenum target, GLenum name, GLint *value) {
+    assert(target == GL_RENDERBUFFER && name == GL_RENDERBUFFER_WIDTH && renderbuffer == 9);
+    *value = 42; calls++;
+}
 void GL_BindFramebuffer(GLenum target, GLuint buffer) {
     assert(target == GL_FRAMEBUFFER && buffer == 7); calls++;
 }
@@ -80,11 +89,21 @@ int main(int argc, char **argv) {
     assert(!strcmp((const char *)glGetString(GL_VENDOR), "mock ANGLE"));
     glRenderbufferStorageMultisampleAPPLE(GL_RENDERBUFFER, 4, 0x8058, 320, 240);
     glResolveMultisampleFramebufferAPPLE();
+    GLint size = -1;
+    glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH, &size);
+    assert(size == 1280);
+    glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, &size);
+    assert(size == 720);
     void *backend = dlopen(argv[2], RTLD_NOW | RTLD_FIRST);
     assert(backend);
     int (*calls)(void) = dlsym(backend, "GCBackendCalls");
     assert(calls && calls() == 7);
-    puts("PASS: direct dyld exports, integer/float/pointer/stack arguments, return values, and Apple MSAA");
+    void (*setRenderbuffer)(unsigned) = dlsym(backend, "GCSetRenderbuffer");
+    assert(setRenderbuffer);
+    setRenderbuffer(9);
+    glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH, &size);
+    assert(size == 42 && calls() == 8);
+    puts("PASS: direct dyld exports, calling convention, Apple MSAA, window dimensions, and real renderbuffers");
     return 0;
 }
 ''')

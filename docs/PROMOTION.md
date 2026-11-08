@@ -194,3 +194,8 @@ floating-point, pointer and stack arguments, return values, and both Apple MSAA
 compatibility functions. ProMotion launches bind the game eagerly to surface
 unresolved imports before entering game main. Another device test is required to
 confirm whether this fixes the reported framebuffer crash.
+
+The window renderbuffer placeholder also reports width/height from the actual
+EGL surface. Real renderbuffer queries continue to use the backend. This avoids
+zero drawable dimensions when Cocos queries renderbuffer 0 after creating its
+window surface. Both paths are covered by the macOS GL test.

@@ -5,6 +5,24 @@
 
 extern void GL_RenderbufferStorageMultisampleANGLE(GLenum, GLsizei, GLenum, GLsizei, GLsizei);
 extern void GL_BlitFramebufferANGLE(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
+extern void GL_GetIntegerv(GLenum, GLint *);
+extern void GL_GetRenderbufferParameteriv(GLenum, GLenum, GLint *);
+
+void glGetRenderbufferParameteriv(GLenum target, GLenum name, GLint *value) {
+    // The EAGL compatibility shim uses renderbuffer 0 for the window drawable.
+    // ANGLE's real drawable is an EGL surface, not a user renderbuffer object.
+    if (target == GL_RENDERBUFFER && value &&
+        (name == GL_RENDERBUFFER_WIDTH || name == GL_RENDERBUFFER_HEIGHT)) {
+        GLint renderbuffer = -1;
+        GL_GetIntegerv(GL_RENDERBUFFER_BINDING, &renderbuffer);
+        EGLDisplay display = eglGetCurrentDisplay();
+        EGLSurface surface = eglGetCurrentSurface(EGL_DRAW);
+        if (renderbuffer == 0 && surface != EGL_NO_SURFACE &&
+            eglQuerySurface(display, surface,
+                name == GL_RENDERBUFFER_WIDTH ? EGL_WIDTH : EGL_HEIGHT, value)) return;
+    }
+    GL_GetRenderbufferParameteriv(target, name, value);
+}
 
 void glRenderbufferStorageMultisampleAPPLE(GLenum target, GLsizei samples, GLenum format,
                                          GLsizei width, GLsizei height) {

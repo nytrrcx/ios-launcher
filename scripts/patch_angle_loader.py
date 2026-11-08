@@ -60,7 +60,7 @@ def patch(root):
     # Signed, static tail branches preserve every argument and return register.
     # Clients now bind to real wrapper definitions, not transitive re-exports.
     assembly = ['.text', '.p2align 2']
-    for name in sorted(gl_api - {'GenFramebuffers', 'GenRenderbuffers'}):
+    for name in sorted(gl_api - {'GenFramebuffers', 'GenRenderbuffers', 'GetRenderbufferParameteriv'}):
         assembly += [f'.globl _gl{name}', f'_gl{name}:', f'    b _GL_{name}']
     header.write_text('\n'.join(lines) + '\n')
     (root / 'GeodeGLForwarders.S').write_text('\n'.join(assembly) + '\n')

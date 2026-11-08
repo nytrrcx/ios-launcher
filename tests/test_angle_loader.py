@@ -84,7 +84,7 @@ class LoaderPatchTests(unittest.TestCase):
         targets = set(re.findall(r'    b (_GL_\w+)$', assembly, re.M))
         actual = exports((ROOT / 'Resources/GDFrameworks/libGLESv2.framework/libGLESv2').read_bytes())
         self.assertFalse(targets - actual)
-        provided |= {'_glGenFramebuffers', '_glGenRenderbuffers',
+        provided |= {'_glGenFramebuffers', '_glGenRenderbuffers', '_glGetRenderbufferParameteriv',
             '_glRenderbufferStorageMultisampleAPPLE', '_glResolveMultisampleFramebufferAPPLE',
             '_OBJC_CLASS_$_EAGLContext', '_kEAGLColorFormatRGB565', '_kEAGLColorFormatRGBA8',
             '_kEAGLDrawablePropertyColorFormat', '_kEAGLDrawablePropertyRetainedBacking'}
