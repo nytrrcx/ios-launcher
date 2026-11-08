@@ -1,116 +1,107 @@
-# Experimental ProMotion support for LiveContainer
+# Experimental ProMotion for LiveContainer
 
-This patch completes the launcher's dormant ANGLE integration. It requests up to
-120 Hz; actual display timing remains controlled by iOS. It has **not** been built
-with an Apple SDK or tested on an iPhone. It is a development patch, not a verified
-IPA release. Target device for device testing: iPhone 17, iOS 26.5.1, LiveContainer.
+This branch requests up to 120 Hz through ANGLE/Metal and fixes the missing default
+stencil attachment in ANGLEGLKit. Target device for testing: iPhone 17, iOS 26.5.1,
+LiveContainer. iOS retains authority over the actual refresh rate. Device testing
+and visual verification on an iPhone are still required.
 
-## Build
+## Build with GitHub Actions
 
-Use a full checkout of https://github.com/geode-sdk/ios-launcher with its submodules
-and the Theos/iOS toolchain described in the upstream README. Apply `ProMotion.patch`
-to that checkout (`git apply --check` first). The working directory supplied with
-this patch contains only the relevant upstream files retrieved through web access;
-it is not a complete checkout. Direct git/network access was unavailable when this
-patch was prepared, and the web snapshots were not pinned to a common commit.
-Review/adapt any context differences against the checkout you build.
+The `ProMotion IPA` workflow in `.github/workflows/promotion.yml` runs when this
+branch is pushed. It installs Theos and the iOS 16.5 SDK, runs host regression tests,
+builds the patched renderer from the pinned `vendor/ANGLEGLKit` submodule, packages
+an IPA, verifies its contents, and uploads `Geode-ProMotion-LiveContainer`.
 
-Provide matching **iOS device arm64** builds of these three frameworks:
+The artifact contains an IPA and `promotion-build.json` with the source revisions
+and IPA SHA-256. It does not contain Geometry Dash. A personal signing certificate
+is not needed for the Actions build: LiveContainer signs the imported application.
+Follow the upstream certificate/JIT-less setup guide on your device.
 
-```
-/path/to/frameworks/ANGLEGLKit.framework/ANGLEGLKit
-/path/to/frameworks/libEGL.framework/libEGL
-/path/to/frameworks/libGLESv2.framework/libGLESv2
-```
+The optional repository secrets `GD_DOWNLOAD`, `KEYONE`, and `KEYTWO` configure
+upstream's game download feature. They are not needed to compile the launcher.
+Without them, use an existing game installation in the launcher's private data or
+its manual IPA import with your own game copy. These secrets are not logged.
 
-ANGLEGLKit upstream: https://github.com/khanhduytran0/ANGLEGLKit
-Its README describes building ANGLE or obtaining the precompiled dependencies.
-Keep upstream license notices with the frameworks. Simulator frameworks are not
-suitable. No third-party binary frameworks are included in this patch.
+Local build, with Theos and an iOS SDK installed:
 
 ```
-make package FINALPACKAGE=1 STRIP=0 PROMOTION_FRAMEWORKS_DIR=/path/to/frameworks
+git submodule update --init --recursive
+python3 scripts/patch_angle_stencil.py vendor/ANGLEGLKit
+make -C vendor/ANGLEGLKit stage FINALPACKAGE=1 STRIP=0 TARGET=iphone:clang:16.5:15.0
+mkdir -p /tmp/promotion-frameworks
+cp -R Resources/GDFrameworks/libEGL.framework Resources/GDFrameworks/libGLESv2.framework /tmp/promotion-frameworks/
+python3 scripts/collect_angle.py vendor/ANGLEGLKit/.theos /tmp/promotion-frameworks
+make package FINALPACKAGE=1 STRIP=0 PROMOTION_FRAMEWORKS_DIR=/tmp/promotion-frameworks
 ```
 
-The staging hook checks that all three framework executables exist, then copies
-them into `Geode.app/Frameworks`. The installer/LiveContainer must sign embedded
-frameworks when importing the resulting IPA. Without these dependencies, the
-ProMotion switch is disabled and "About ProMotion 120 Hz" identifies what is missing.
-The ordinary launcher build remains possible without the optional frameworks.
+Do not force an iOS 14 deployment target on all subprojects: the timing library
+uses the iOS 15 `CAFrameRateRange` API. Do not substitute the old prebuilt wrapper
+from `Resources/GDFrameworks`: the runtime checks the corrected wrapper's version.
 
-## Enable in LiveContainer
+## Install and enable
 
-1. Import the rebuilt IPA as Geode. Follow the upstream LiveContainer guide for
-   certificate/JIT-less setup (or JIT). Keep **Don't Inject TweakLoader** and
-   **Don't Load TweakLoader** enabled in LiveContainer's settings for Geode.
-2. Open Geode's Advanced settings and enable **ProMotion 120 Hz (Experimental)**.
-3. Launch the game. Renderer preparation happens before signing, and the timing
-   library loads directly before the game binary. LiveContainer's own TweakLoader
-   is not required.
-4. To restore OpenGLES, disable the option and launch again. The installed game
-   and extracted mod dependencies are rewritten back to OpenGLES before signing.
+1. Download the Actions artifact, unzip it and import the IPA into LiveContainer.
+   Update the existing Geode entry to retain its private game/mod data; keep a backup.
+2. Keep **Don't Inject TweakLoader** and **Don't Load TweakLoader** enabled in
+   LiveContainer's settings for Geode, as required by the upstream guide.
+3. In Geode's Advanced settings enable **ProMotion 120 Hz (Experimental)**, then Launch.
+4. To restore OpenGLES, disable the switch and Launch again.
 
-Low Power Mode, Accessibility > Motion > Limit Frame Rate, and thermal policy can
-reduce the delivered rate. The host LiveContainer must opt into ProMotion with
-`CADisableMinimumFrameDurationOnPhone = true`; current upstream includes that key.
-The patch does not modify or re-sign LiveContainer itself.
+Disable Low Power Mode and Accessibility > Motion > Limit Frame Rate for testing.
+The host LiveContainer must opt in using `CADisableMinimumFrameDurationOnPhone`;
+current upstream does. This branch does not modify the host LiveContainer.
 
-After installing/updating mods in the game, return to the launcher and launch again
-so extracted binaries can be configured and signed. Hot-loading newly downloaded
-OpenGLES mods into an already running ANGLE session is not covered by this patch.
+After installing or updating mods, return to the launcher and launch again so the
+new extracted binaries are configured and signed. Hot-loading a newly downloaded
+OpenGLES mod into an already running ANGLE session is not covered by this change.
 
-## Implementation
+## Graphics correction
 
-- Detect refresh-rate capability through `UIScreen.maximumFramesPerSecond`, with
-  no device-name allowlist that would exclude a non-Pro iPhone 17.
-- Copy the renderer dependencies into the private game bundle and rewrite imports
-  in GeometryJump, Geode, and extracted mod dylibs in both supported directory
-  layouts (`unzipped/<id>` and `unzipped/binaries`). Rewrite ANGLE's own framework
-  dependencies too. Absolute bundle paths avoid LiveContainer's host executable
-  being used to resolve `@executable_path`; paths are refreshed on later launches.
-- Use bounded Mach-O command rewriting, retaining load command order, dependency
-  ordinals, file types, segment offsets and code bytes. Insufficient header padding
-  stops launch with an error rather than overwriting a section. Atomic writes
-  replace previously signed inodes; the existing signing pipeline runs afterwards.
-- Retain renderer frameworks when disabled, so a failed/retried transition cannot
-  leave partially restored files referring to deleted dependencies.
-- Set the game's ProMotion plist keys. The display-link hook requests an 80–120 Hz
-  range on supported screens without overriding `isPaused`, `setPaused:` or private
-  Core Animation classes. The system retains authority over actual timing.
-- Newly changed binaries trigger signing. Failures stop launch and remain retryable.
+ANGLEGLKit originally created the drawable with `StencilNone`, while Geode's
+`CCClippingNode` caches `GL_STENCIL_BITS` during its first initialization. A zero
+result sends it through a limited rectangular scissor fallback, which cannot
+represent arbitrary or inverted masks accurately.
 
-## Verification and remaining device work
+`scripts/patch_angle_stencil.py` changes the drawable defaults to depth 24/stencil 8
+and asks for the same depth/stencil configuration when creating the EGL context.
+The existing renderer then creates a real stencil attachment. No GL bit-count
+queries are fabricated and no mask is replaced by its bounding rectangle. When
+renderbuffer storage is initialized with the default framebuffer bound, the wrapper
+checks the actual stencil bit count and reports failure if fewer than 8 bits exist.
+The exported `GCGeodeStencilFixVersion` marker prevents accidentally loading an old
+unfixed wrapper. The actual rendering result must still be checked on the device.
 
-Host tests:
+## Launcher integration
+
+The launcher rewrites renderer imports in GeometryJump, Geode, and extracted mod
+dylibs before signing. Both `unzipped/<id>` and `unzipped/binaries` are supported.
+Absolute private-bundle paths avoid LiveContainer host `@executable_path` ambiguity.
+The bounded Mach-O editor preserves ordinals, segments and code offsets, rejects
+insufficient header padding, and writes changed files atomically before signing.
+Disabling restores OpenGLES imports and retains unused frameworks to make retries
+safe. The display-link hook requests an 80–120 Hz range without overriding pause
+or private Core Animation classes. It loads directly before the game.
+
+## Validation and device checks
 
 ```
 python3 -m unittest discover -s tests -v
 ```
 
-15 tests pass, including enable/disable, idempotence, container relocation,
-weak/reexport imports, FAT32/FAT64, payload preservation, header space exhaustion
-and malformed input. The C helper compiles with `-Wall -Wextra -Werror` and GCC static analysis on Linux.
-A further 50,000 deterministic mutated inputs pass AddressSanitizer/UBSan
-(leak detection disabled because this sandbox uses ptrace). The staging hooks were
-checked with fixture frameworks, including an input directory containing spaces
-and a missing dependency; this is not a check of IPA signing.
-These tests do not validate Objective-C/Logos compilation, code signing, or rendering.
+18 host tests cover the source correction, Mach-O enable/disable, repeated setup,
+container relocation, FAT32/FAT64, payload preservation, insufficient header space,
+and malformed inputs. The rewrite was also exercised on real bundled framework
+binaries and the released Geode 5.11.2 iOS library, including rollback. Earlier
+50,000 ASan/UBSan mutations and static C analysis passed.
 
-Before treating this as release-ready, build with Theos and test on the target device:
+On the iPhone verify actual presentations with Instruments or a Metal HUD, rather
+than only a game's FPS counter. Check menus, gameplay, Geode scrolling/popups,
+arbitrary/inverted/nested masks, mod updates and restart, pause/background/foreground,
+tapping during gameplay, low power settings, and reverting to OpenGLES. Passing CI
+validates compilation/packaging, not visual compatibility or sustained 120 FPS.
 
-- Verify Metal rendering and **actual presentations**, e.g. with Instruments/Metal
-  HUD, rather than relying solely on a game's FPS counter. Check menu and gameplay.
-- Test JIT-less signatures and a second cold launch with no settings changes.
-- Test both mod directory layouts and installing/updating a mod followed by restart.
-- Check Geode lists, popups, scrolling/clipping and representative mods. The stencil
-  and CCClippingNode issue documented in upstream issue #40 is **not resolved by
-  this launcher patch**; use a Geode build with its applicable clipping fallback,
-  and validate it visually. Graphics compatibility remains experimental.
-- Test background/foreground and pause/resume, tapping while playing, Low Power
-  Mode, Limit Frame Rate, disabling the feature, and reinstall/container relocation.
-
-References:
+Sources:
 - https://github.com/geode-sdk/ios-launcher/issues/40
+- https://github.com/geode-sdk/geode/pull/1556
+- https://github.com/khanhduytran0/ANGLEGLKit
 - https://github.com/geode-sdk/ios-launcher/blob/main/LIVECONTAINER-INSTALL-GUIDE.md
-- https://github.com/LiveContainer/LiveContainer/blob/main/LiveContainer/Info.plist
-- https://developer.apple.com/documentation/quartzcore/optimizing-iphone-and-ipad-apps-to-support-promotion-displays
