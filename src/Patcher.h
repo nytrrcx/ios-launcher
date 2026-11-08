@@ -7,6 +7,7 @@
 
 + (void)startUnzip:(void (^)(NSString* doForce))completionHandler;
 + (NSString*)getPatchChecksum:(NSURL*)from withSafeMode:(BOOL)safeMode;
++ (NSString*)jitlessArgumentsForExecutable:(NSString*)path safeMode:(BOOL)safeMode error:(NSString**)error;
 + (void)patchGDBinary:(NSURL*)from
 					to:(NSURL*)to
 	withHandlerAddress:(uint64_t)handlerAddress

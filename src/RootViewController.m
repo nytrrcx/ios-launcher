@@ -593,7 +593,7 @@ extern NSString* g_commitHash;
 - (void)signAppWithSafeMode:(void (^)(BOOL success, NSString* error))completionHandler {
 	NSURL* bundlePath = [[LCPath bundlePath] URLByAppendingPathComponent:[Utils gdBundleName]];
 	if ([[Utils getPrefs] boolForKey:@"JITLESS"]) {
-		[Patcher patchGDBinary:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] to:[bundlePath URLByAppendingPathComponent:@"GeometryJump"] withHandlerAddress:0xa4c000
+		[Patcher patchGDBinary:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] to:[bundlePath URLByAppendingPathComponent:@"GeometryJump"] withHandlerAddress:0
 						 force:NO
 				  withSafeMode:YES
 			  withEntitlements:NO completionHandler:^(BOOL success, NSString* error) {
@@ -753,7 +753,7 @@ extern NSString* g_commitHash;
 	}
 	NSURL* bundlePath = [[LCPath bundlePath] URLByAppendingPathComponent:[Utils gdBundleName]];
 	if ([[Utils getPrefs] boolForKey:@"JITLESS"]) {
-		[Patcher patchGDBinary:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] to:[bundlePath URLByAppendingPathComponent:@"GeometryJump"] withHandlerAddress:0xa4c000
+		[Patcher patchGDBinary:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] to:[bundlePath URLByAppendingPathComponent:@"GeometryJump"] withHandlerAddress:0
 						 force:NO
 				  withSafeMode:NO
 			  withEntitlements:NO completionHandler:^(BOOL success, NSString* error) {
@@ -898,7 +898,7 @@ extern NSString* g_commitHash;
 			});
 		}];
 	} else {
-		[Patcher patchGDBinary:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] to:[bundlePath URLByAppendingPathComponent:@"GeometryJump"] withHandlerAddress:0xa4c000
+		[Patcher patchGDBinary:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] to:[bundlePath URLByAppendingPathComponent:@"GeometryJump"] withHandlerAddress:0
 						 force:NO
 				  withSafeMode:NO
 			  withEntitlements:NO completionHandler:^(BOOL success, NSString* error) { completionHandler(success, error); }];
@@ -910,11 +910,13 @@ extern NSString* g_commitHash;
 	if (launchArgs && [launchArgs length] > 2) {
 		env = launchArgs;
 	} else {
-		if (safeMode) {
-			env = @"--geode:use-common-handler-offset=a4c000 --geode:safe-mode";
-		} else {
-			env = @"--geode:use-common-handler-offset=a4c000";
-		}
+        NSString *argumentError = nil;
+        NSString *executable = [[[LCPath bundlePath] URLByAppendingPathComponent:[Utils gdBundleName]] URLByAppendingPathComponent:@"GeometryJump"].path;
+        env = [Patcher jitlessArgumentsForExecutable:executable safeMode:safeMode error:&argumentError];
+        if (!env) {
+            [Utils showError:self title:argumentError error:nil];
+            return;
+        }
 	}
 	NSString* b64 = [[env dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
 	NSMutableString* encodedUrl = [b64 mutableCopy];
@@ -946,11 +948,13 @@ extern NSString* g_commitHash;
 	if (launchArgs && [launchArgs length] > 2) {
 		env = launchArgs;
 	} else {
-		if (safeMode) {
-			env = @"--geode:use-common-handler-offset=8b8000 --geode:safe-mode";
-		} else {
-			env = @"--geode:use-common-handler-offset=8b8000";
-		}
+        NSString *argumentError = nil;
+        NSString *executable = [[[LCPath bundlePath] URLByAppendingPathComponent:[Utils gdBundleName]] URLByAppendingPathComponent:@"GeometryJump"].path;
+        env = [Patcher jitlessArgumentsForExecutable:executable safeMode:safeMode error:&argumentError];
+        if (!env) {
+            [Utils showError:self title:argumentError error:nil];
+            return;
+        }
 	}
 	NSString* b64 = [[env dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
 	NSMutableString* encodedUrl = [b64 mutableCopy];
@@ -1090,7 +1094,7 @@ extern NSString* g_commitHash;
 	NSString* uniqId = [[[UIDevice currentDevice] identifierForVendor] UUIDString];
 	[fm createFileAtPath:[bundlePath URLByAppendingPathComponent:@"sf.bd"].path contents:[uniqId dataUsingEncoding:NSUTF8StringEncoding] attributes:@{}];
 
-	[Patcher patchGDBinary:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] to:[bundlePath URLByAppendingPathComponent:@"GeometryJump"] withHandlerAddress:0xa4c000
+	[Patcher patchGDBinary:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] to:[bundlePath URLByAppendingPathComponent:@"GeometryJump"] withHandlerAddress:0
 					 force:[[Utils getPrefs] boolForKey:@"IS_COMPRESSING_IPA"]
 			  withSafeMode:safeMode
 		  withEntitlements:YES completionHandler:^(BOOL success, NSString* error) {

@@ -1129,7 +1129,7 @@ extern NSString *g_commitHash;
 		[Setting simpleCreate:@"Patch Binary".loc type:SettingTypeButton action:^{
 			// Patch
 			[Patcher patchGDBinary:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] to:[bundlePath URLByAppendingPathComponent:@"GeometryJump"]
-				withHandlerAddress:0xa4c000
+				withHandlerAddress:0
 				force:YES
 				withSafeMode:NO
 				withEntitlements:NO completionHandler:^(BOOL success, NSString* error) {
@@ -1232,7 +1232,7 @@ extern NSString *g_commitHash;
 				return;
 			}
 			[Patcher patchGDBinary:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] to:[bundlePath URLByAppendingPathComponent:@"GeometryJump"]
-				withHandlerAddress:0xa4c000 force:YES withSafeMode:YES
+				withHandlerAddress:0 force:YES withSafeMode:YES
 				withEntitlements:YES completionHandler:^(BOOL success, NSString* error) {
 				dispatch_async(dispatch_get_main_queue(), ^{
 					if (success) {
@@ -1256,7 +1256,7 @@ extern NSString *g_commitHash;
 				return;
 			}
 			[Patcher patchGDBinary:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] to:[bundlePath URLByAppendingPathComponent:@"GeometryJump"]
-				withHandlerAddress:0xa4c000
+				withHandlerAddress:0
 				force:YES
 				withSafeMode:YES
 				withEntitlements:NO completionHandler:^(BOOL success, NSString* error) {
@@ -1524,7 +1524,6 @@ extern NSString *g_commitHash;
     case 20: {
         if (![sender isOn]) {
             [[Utils getPrefs] setBool:NO forKey:@"USE_MAX_FPS"];
-            [[Utils getPrefs] setObject:@"NO" forKey:@"PATCH_CHECKSUM"];
             [self.tableView reloadData];
             break;
         }
@@ -1539,7 +1538,6 @@ extern NSString *g_commitHash;
             preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"Enable" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
             [[Utils getPrefs] setBool:YES forKey:@"USE_MAX_FPS"];
-            [[Utils getPrefs] setObject:@"NO" forKey:@"PATCH_CHECKSUM"];
             [self.tableView reloadData];
         }]];
         [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {

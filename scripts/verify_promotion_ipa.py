@@ -30,6 +30,7 @@ provenance = {
     'launcher_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
     'angle_commit': subprocess.check_output(['git', '-C', 'vendor/ANGLEGLKit', 'rev-parse', 'HEAD'], text=True).strip(),
     'stencil_fix_version': 1,
+    'jitless_storage': 'derived-from-game-mach-o',
     'ipa_sha256': hashlib.sha256(ipa.read_bytes()).hexdigest(),
     'device_tested': False,
 }

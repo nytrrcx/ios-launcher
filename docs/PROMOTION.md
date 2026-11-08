@@ -88,9 +88,10 @@ or private Core Animation classes. It loads directly before the game.
 python3 -m unittest discover -s tests -v
 ```
 
-18 host tests cover the source correction, Mach-O enable/disable, repeated setup,
+28 host tests cover the source correction, Mach-O enable/disable, repeated setup,
 container relocation, FAT32/FAT64, payload preservation, insufficient header space,
-and malformed inputs. The rewrite was also exercised on real bundled framework
+and malformed inputs. Handler-storage tests cover the 2.208 and 2.2091 layouts,
+missing/readonly/truncated sections and aligned offsets. The rewrite was also exercised on real bundled framework
 binaries and the released Geode 5.11.2 iOS library, including rollback. Earlier
 50,000 ASan/UBSan mutations and static C analysis passed.
 
@@ -105,3 +106,19 @@ Sources:
 - https://github.com/geode-sdk/geode/pull/1556
 - https://github.com/khanhduytran0/ANGLEGLKit
 - https://github.com/geode-sdk/ios-launcher/blob/main/LIVECONTAINER-INSTALL-GUIDE.md
+
+## JIT-less launch compatibility
+
+The original feature build inherited upstream commit d8b3a39, which changed the
+fixed handler storage address to `0xa4c000` for Geometry Dash 2.2091. Geometry Dash
+2.208 instead has its injected handler at `0x8b4000` and writable storage at
+`0x8c4000`; using the newer constant can crash while loading Geode even with
+ProMotion disabled.
+
+Both patch generation and launch arguments now derive the storage offset from
+`__STORAGE,__storage` relative to `__TEXT` in the actual game file. No game-version
+address constant is used. The patch cache revision is bumped so the first Launch
+after upgrading rebuilds the old trampoline. Renderer switches no longer reset
+the independent hook cache. A missing or invalid writable storage section stops
+launch with an error rather than guessing an address. The phone report identified
+the incompatible layout; device retesting of this correction remains required.

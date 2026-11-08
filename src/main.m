@@ -586,11 +586,10 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
 	NSString* launchArgs = [gcUserDefaults stringForKey:@"LAUNCH_ARGS"];
 	// safe mode
 	if ([gcUserDefaults boolForKey:@"JITLESS"] || [gcUserDefaults boolForKey:@"FORCE_PATCHING"]) {
-		if (safeMode) {
-			setenv("LAUNCHARGS", "--geode:use-common-handler-offset=a4c000 --geode:safe-mode", 1);
-		} else {
-			setenv("LAUNCHARGS", "--geode:use-common-handler-offset=a4c000", 1);
-		}
+        NSString *argumentError = nil;
+        NSString *arguments = [Patcher jitlessArgumentsForExecutable:appBundle.executablePath safeMode:safeMode error:&argumentError];
+        if (!arguments) return argumentError;
+        setenv("LAUNCHARGS", arguments.UTF8String, 1);
 	} else {
 		if (safeMode) {
 			setenv("LAUNCHARGS", "--geode:safe-mode", 1);
@@ -683,12 +682,13 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
 	uint32_t appIndex = _dyld_image_count();
 	appMainImageIndex = appIndex;
 
+	dlerror();
 	void* appHandle = dlopen(appExecPath, RTLD_LAZY | RTLD_GLOBAL | RTLD_FIRST);
 	appExecutableHandle = appHandle;
 	AppLog(@"[invokeAppMain] Opened binary handle.");
 	const char* dlerr = dlerror();
 
-	if (!appHandle || (uint64_t)appHandle > 0xf00000000000 || dlerr) {
+	if (!appHandle || (uint64_t)appHandle > 0xf00000000000) {
 		if (dlerr) {
 			appError = @(dlerr);
 		} else {
@@ -861,7 +861,7 @@ int GeodeMain(int argc, char* argv[]) {
 				NSURL* bundlePath = [[LCPath bundlePath] URLByAppendingPathComponent:[Utils gdBundleName]];
 				AppLog(@"Checking if GD needs to be patched & signed...");
 				dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-					[Patcher patchGDBinary:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] to:[bundlePath URLByAppendingPathComponent:@"GeometryJump"] withHandlerAddress:0xa4c000 force:NO withSafeMode:safeMode withEntitlements:NO completionHandler:^(BOOL success, NSString* error) {
+					[Patcher patchGDBinary:[bundlePath URLByAppendingPathComponent:@"GeometryOriginal"] to:[bundlePath URLByAppendingPathComponent:@"GeometryJump"] withHandlerAddress:0 force:NO withSafeMode:safeMode withEntitlements:NO completionHandler:^(BOOL success, NSString* error) {
 						AppLog(@"Seeing conditions");
 						if (success) {
 							BOOL force = NO;

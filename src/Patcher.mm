@@ -3,6 +3,7 @@
 #include <filesystem>
 #import "Patcher.h"
 #import "ProMotion.h"
+#include "JITLessMachO.h"
 #import "LCUtils/unarchive.h"
 #import "Utils.h"
 #import "components/LogUtils.h"
@@ -10,7 +11,7 @@
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
 
-#define PATCH_VER @"1"
+#define PATCH_VER @"2-dynamic-storage"
 
 #include <dlfcn.h>
 // change to 0x1692, and max is 0x7fff
@@ -582,6 +583,18 @@ for func in list:
 	}
 	completionHandler(forceSign);
 }
+// Read the same writable storage used by the patcher, including cached game binaries.
++ (NSString*)jitlessArgumentsForExecutable:(NSString*)path safeMode:(BOOL)safeMode error:(NSString**)error {
+    NSError *readError = nil;
+    NSData *data = [NSData dataWithContentsOfFile:path options:NSDataReadingMappedIfSafe error:&readError];
+    uint64_t offset = 0;
+    if (!data || !GCCommonHandlerStorageOffset((const uint8_t*)data.bytes, data.length, &offset)) {
+        if (error) *error = readError.localizedDescription ?: @"The game has no valid JIT-less handler storage. Run Launch once more to rebuild the game patch.";
+        return nil;
+    }
+    AppLog(@"JIT-less handler storage offset: %#llx", offset);
+    return [NSString stringWithFormat:@"--geode:use-common-handler-offset=%llx%@", offset, safeMode ? @" --geode:safe-mode" : @""];
+}
 // Configure renderer clients before the signing pipeline runs.
 + (void)patchGeode:(void (^)(BOOL success, NSString* error))completionHandler {
     NSError *error = nil;
@@ -684,9 +697,16 @@ for func in list:
 		return completionHandler(NO, @"Couldn't find LC_FUNCTION_STARTS segment (Binary corrupted?)");
 	}
 
-	AppLog(@"Patching handler at %#llx...", CAVE_OFFSET);
+	uint64_t storageOffset = 0;
+	if (!GCCommonHandlerStorageOffset((const uint8_t*)data.bytes, data.length, &storageOffset)) {
+		return completionHandler(NO, @"Cannot find writable storage for the JIT-less handler.");
+	}
+	if (handlerAddress && handlerAddress != storageOffset) {
+		AppLogWarn(@"Ignoring outdated handler storage hint %#llx; binary requires %#llx", handlerAddress, storageOffset);
+	}
+	AppLog(@"Patching handler at %#llx with storage offset %#llx...", CAVE_OFFSET, storageOffset);
 	if (getCommonHandlerBytes) {
-		std::vector<uint8_t> bytes = getCommonHandlerBytes(customSect->addr, (handlerAddress - (customSect->addr - textSeg->vmaddr)));
+		std::vector<uint8_t> bytes = getCommonHandlerBytes(customSect->addr, (storageOffset - (customSect->addr - textSeg->vmaddr)));
 		if (bytes.size() == 0) {
 			AppLog(@"Handler generation from TulipHook failed. (Empty bytes)");
 			return completionHandler(NO, @"TulipHook failed to generate handler bytes (Empty bytes)");
