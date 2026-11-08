@@ -79,11 +79,12 @@ Absolute private-bundle paths avoid LiveContainer host `@executable_path` ambigu
 The bounded Mach-O editor preserves ordinals, segments and code offsets, rejects
 insufficient header padding, and writes changed files atomically before signing.
 Disabling restores OpenGLES imports and retains unused frameworks to make retries
-safe. After the game loads, the launcher installs timing on Cocos's
-`CCDirectorCaller doCaller:` callback. The callback configures only the game
-display link using its public frame-rate property and requests an 80–120 Hz
-range. Pause, invalidation, UIKit display links, and private Core Animation
-classes are left to their original implementations.
+safe. Before signing, the launcher raises the cap in the game's native
+`CCDirectorCaller startMainLoop` setup from 60 to 120. The native setup configures
+both its display link and the director's animation interval from the same capped
+screen rate. A callback observer logs the requested rate without changing it.
+Pause, invalidation, measured timestamps, physics and audio keep their native
+implementations. See the long-level synchronization notes below.
 
 ## Validation and device checks
 
@@ -91,13 +92,15 @@ classes are left to their original implementations.
 python3 -m unittest discover -s tests -v
 ```
 
-32 host tests cover the source corrections, Mach-O enable/disable, repeated setup,
+43 host tests cover the source corrections, Mach-O enable/disable, repeated setup,
 container relocation, FAT32/FAT64, payload preservation, insufficient header space,
 and malformed inputs. A separate macOS job exercises the actual timing code with
 Apple's Objective-C runtime and simulated public UIKit properties. It checks
-original callback dispatch, ABI validation, 120/90/60 Hz, repeated installation,
-display-link recreation, pause/invalidation, and object lifetime. It does not
-exercise real Core Animation presentation. Handler-storage tests cover the 2.208 and 2.2091 layouts,
+original callback dispatch, ABI validation, twenty-minute 120/90/60 Hz timestamp
+sequences with late frames, repeated installation, display-link recreation,
+pause/invalidation, and object lifetime. These use a simulated native callback;
+they do not run Geometry Dash's physics, music, or real Core Animation presentation.
+Handler-storage tests cover the 2.208 and 2.2091 layouts,
 missing/readonly/truncated sections and aligned offsets. The rewrite was also exercised on real bundled framework
 binaries and the released Geode 5.11.2 iOS library, including rollback. Earlier
 50,000 ASan/UBSan mutations and static C analysis passed.
@@ -199,3 +202,38 @@ The window renderbuffer placeholder also reports width/height from the actual
 EGL surface. Real renderbuffer queries continue to use the backend. This avoids
 zero drawable dimensions when Cocos queries renderbuffer 0 after creating its
 window surface. Both paths are covered by the macOS GL test.
+
+## Long-level synchronization
+
+The user confirmed that 8495d35 launches successfully, then reported that gameplay
+gradually runs ahead of music with ProMotion enabled even with Smooth Fix,
+Speedhack and FPS/TPS Bypass disabled.
+
+Inspection of the supplied GD 2.208 binary identified an inconsistency in the
+previous timing implementation. The game's `startMainLoop` caps the screen rate
+at 60, requests that rate from CADisplayLink, and sets the native director interval
+to its reciprocal. Our old `doCaller:` hook subsequently requested an 80–120 Hz
+range from the display link alone. The director still advertised a 1/60-second
+animation interval. The native callback itself already uses timestamp differences
+and the game's timestep conversion carries fractional time forward; neither needs
+an artificial multiplier.
+
+`GameTimingMachO.c` now locates `CCDirectorCaller` and `startMainLoop` through
+bounded Objective-C metadata, translates VM addresses through file-backed
+segments, and recognizes the cap together with its native reciprocal-interval
+consumer. It changes only the two 60-immediate instructions to 120 before the
+normal signing pipeline. No game-version address constant is used. The game
+then requests min(screenFPS, 120) and computes its own matching interval. The
+callback observer changes no frame-rate properties or timestamps. Disabling
+restores the cap to 60; unsupported implementations cannot enable ProMotion.
+
+Both supplied game copies passed enable, repeated enable and byte-exact rollback
+in memory, with differences confined to the two cap instructions. The originals
+were not modified. Synthetic tests cover relative and absolute method lists,
+indirect selectors, nonmatching VM/file offsets, method boundaries, duplicate
+caps, FAT files and malformed input. 200,000 mutations passed ASan/UBSan. The
+game files remain outside the repository and build artifacts.
+
+This corrects the established clock-configuration inconsistency. The reported
+music drift still needs a phone retest in the same long level; the automated
+timestamp tests cannot establish audio synchronization on the device.

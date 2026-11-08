@@ -10,28 +10,21 @@ static void (*originalDoCaller)(id, SEL, id);
 static __weak CADisplayLink *lastGameLink;
 
 static void gameDoCaller(id caller, SEL selector, id sender) {
-    // Cocos passes its display link as the sender of doCaller:. UIKit's own
-    // display links and pause/background methods are never hooked.
+    // Observe the first callback for diagnostics only. startMainLoop now sets
+    // both the display-link rate and the director interval natively, before any
+    // frames run. Overriding just the link here left the engine at 1/60 second.
     if ([sender isKindOfClass:CADisplayLink.class]) {
         CADisplayLink *link = sender;
-        NSInteger fps = MIN(120, UIScreen.mainScreen.maximumFramesPerSecond);
-        if (fps > 0) {
+        if (lastGameLink != link) {
+            lastGameLink = link;
             if (@available(iOS 15.0, *)) {
-                CAFrameRateRange current = link.preferredFrameRateRange;
-                float minimum = MIN(80, fps);
-                if (current.minimum != minimum || current.maximum != fps || current.preferred != fps) {
-                    // A struct literal avoids introducing a dependency on the
-                    // newer CAFrameRateRangeMake C function in the launcher.
-                    link.preferredFrameRateRange = (CAFrameRateRange){minimum, (float)fps, (float)fps};
-                }
-            } else if (link.preferredFramesPerSecond != fps) {
-                link.preferredFramesPerSecond = fps;
+                CAFrameRateRange range = link.preferredFrameRateRange;
+                AppLog(@"[ProMotion] Native game clock: display link %.0f–%.0f Hz (preferred %.0f).",
+                       range.minimum, range.maximum, range.preferred);
+            } else {
+                AppLog(@"[ProMotion] Native game clock: display link %ld Hz.", (long)link.preferredFramesPerSecond);
             }
-            if (lastGameLink != link) {
-                lastGameLink = link;
-                AppLog(@"[ProMotion] Game display link requested %ld Hz.", (long)fps);
-                [LogUtils flush];
-            }
+            [LogUtils flush];
         }
     }
     originalDoCaller(caller, selector, sender);
@@ -55,7 +48,7 @@ BOOL GCInstallGameProMotionTiming(NSString **error) {
     // No dynamic-library constructor, runtime-generated IMP, or TLS is needed.
     originalDoCaller = (void (*)(id, SEL, id))method_getImplementation(callback);
     method_setImplementation(callback, (IMP)gameDoCaller);
-    AppLog(@"[ProMotion] Game callback timing installed (CCDirectorCaller doCaller:).");
+    AppLog(@"[ProMotion] Native game timing configured; callback observer installed (CCDirectorCaller doCaller:).");
     [LogUtils flush];
     return YES;
 }

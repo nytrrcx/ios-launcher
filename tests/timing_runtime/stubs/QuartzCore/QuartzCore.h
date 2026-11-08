@@ -13,4 +13,5 @@ typedef struct {
 @property(nonatomic) BOOL paused;
 @property(nonatomic) BOOL invalidated;
 @property(nonatomic) NSUInteger rangeWrites;
+@property(nonatomic) CFTimeInterval timestamp;
 @end

@@ -1,5 +1,6 @@
 #import "ProMotion.h"
 #import "PromotionMachO.h"
+#import "GameTimingMachO.h"
 #import "Utils.h"
 #import "LCUtils/Shared.h"
 
@@ -25,13 +26,21 @@
     if (error) *error = [NSError errorWithDomain:@"Geode.ProMotion" code:1 userInfo:@{NSLocalizedDescriptionKey: message}];
     return NO;
 }
-+ (BOOL)patchFile:(NSString*)path frameworks:(NSString*)frameworks enabled:(BOOL)enabled error:(NSError**)error {
++ (BOOL)patchFile:(NSString*)path frameworks:(NSString*)frameworks enabled:(BOOL)enabled nativeTiming:(BOOL)nativeTiming error:(NSError**)error {
     NSMutableData *data = [NSMutableData dataWithContentsOfFile:path options:0 error:error];
     if (!data) return NO;
     int result = GCPatchRenderer(data.mutableBytes, data.length, frameworks.UTF8String, enabled);
     if (result < 0) return [self fail:error message:[NSString stringWithFormat:
         @"Cannot configure renderer for %@ (%@). No changes were written to this file.", path.lastPathComponent,
         result == -2 ? @"insufficient Mach-O header space" : @"unsupported or malformed Mach-O"]];
+    if (nativeTiming) {
+        int timing = GCConfigureNativeGameTiming(data.mutableBytes, data.length, enabled);
+        if (timing < 0 && (enabled || timing != -2)) return [self fail:error message:
+            @"This Geometry Dash version's native frame timer is not supported by ProMotion. Disable ProMotion to launch and send app.log with your game version."];
+        // An unfamiliar game that could not be enabled must still be able to
+        // leave ANGLE mode. Supported 60/120 caps are restored on disable.
+        if (timing >= 0) result |= timing;
+    }
     if (result == 0) return YES;
     // Atomic replacement avoids modifying a previously mapped, signed inode.
     if (![data writeToFile:path options:NSDataWritingAtomic error:error]) return NO;
@@ -74,14 +83,14 @@
                                 toPath:destination error:error]) return NO;
             }
             // Absolute dependencies are intentional: @executable_path is LiveContainer's executable on some versions.
-            if (![self patchFile:[destination stringByAppendingPathComponent:name] frameworks:frameworks enabled:YES error:error]) return NO;
+            if (![self patchFile:[destination stringByAppendingPathComponent:name] frameworks:frameworks enabled:YES nativeTiming:NO error:error]) return NO;
         }
         [prefs setObject:sourceHash forKey:@"PROMOTION_FRAMEWORKS_HASH"];
     }
     [prefs setBool:YES forKey:@"PROMOTION_ACTIVE"];
-    if (![self patchFile:executable frameworks:frameworks enabled:enabled error:error]) return NO;
+    if (![self patchFile:executable frameworks:frameworks enabled:enabled nativeTiming:YES error:error]) return NO;
     NSString *geode = [Utils getTweakDir];
-    if (geode && [fm fileExistsAtPath:geode] && ![self patchFile:geode frameworks:frameworks enabled:enabled error:error]) return NO;
+    if (geode && [fm fileExistsAtPath:geode] && ![self patchFile:geode frameworks:frameworks enabled:enabled nativeTiming:NO error:error]) return NO;
     NSURL *mods = [[LCPath dataPath] URLByAppendingPathComponent:@"game/geode/unzipped"];
     if ([fm fileExistsAtPath:mods.path]) {
         __block NSError *enumerationError = nil;
@@ -94,7 +103,7 @@
             NSNumber *regular;
             if (![file getResourceValue:&regular forKey:NSURLIsRegularFileKey error:error]) return NO;
             if (regular.boolValue && [file.pathExtension isEqualToString:@"dylib"] &&
-                ![self patchFile:file.path frameworks:frameworks enabled:enabled error:error]) return NO;
+                ![self patchFile:file.path frameworks:frameworks enabled:enabled nativeTiming:NO error:error]) return NO;
         }
         if (enumerationError) { if (error) *error = enumerationError; return NO; }
     }

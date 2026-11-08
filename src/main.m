@@ -698,7 +698,7 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
         }
         AppLog(@"[ProMotion] Direct GL entry points verified, including framebuffer and Apple MSAA compatibility.");
         [LogUtils flush];
-        AppLog(@"[ProMotion] ANGLEGLKit loaded; game timing will be installed after the game loads.");
+        AppLog(@"[ProMotion] ANGLEGLKit loaded; using the game's native frame timer.");
         [LogUtils flush];
     } else {
         unsetenv("ANGLEGLKit");
@@ -730,7 +730,7 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
 	AppLog(@"[invokeAppMain] No dlopen error");
 
     if ([gcUserDefaults boolForKey:@"USE_MAX_FPS"]) {
-        AppLog(@"[ProMotion] Installing timing on the loaded game callback.");
+        AppLog(@"[ProMotion] Installing the native game clock observer.");
         [LogUtils flush];
         NSString *timingError = nil;
         if (!GCInstallGameProMotionTiming(&timingError)) {

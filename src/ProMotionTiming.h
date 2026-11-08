@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
 
-// Called explicitly after the game image is loaded, before entering its main().
+// Install a diagnostic observer after loading the game, before entering main().
+// GameTimingMachO configures the actual frame timer before signing.
 BOOL GCInstallGameProMotionTiming(NSString **error);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the actual game callback implementation against Apple's Objective-C runtime."""
+"""Test the callback observer and elapsed-time preservation on Apple's ObjC runtime."""
 from pathlib import Path
 import subprocess
 import tempfile

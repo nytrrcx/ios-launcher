@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "PromotionMachO.h"
+#include "GameTimingMachO.h"
 
 int main(void) {
     uint8_t seed[16384], buffer[16384];
@@ -20,6 +21,7 @@ int main(void) {
             buffer[offset] = (uint8_t)(random >> 24);
         }
         GCPatchRenderer(buffer, size, "/private/var/mobile/Containers/Example/Frameworks", i % 2);
+        GCConfigureNativeGameTiming(buffer, size, i % 2);
     }
     puts("50000 mutated inputs passed");
     return 0;

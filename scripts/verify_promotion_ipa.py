@@ -70,8 +70,9 @@ with zipfile.ZipFile(ipa) as archive:
     if any(name.endswith('/CAHighFPS.dylib') for name in archive.namelist()):
         raise SystemExit('IPA still contains the timing library that crashed during preload')
     launcher = archive.read(base + 'Geode')
-    if b'GCInstallGameProMotionTiming' not in launcher or b'Game callback timing installed' not in launcher:
-        raise SystemExit('Launcher does not include explicit game callback timing')
+    if (b'GCInstallGameProMotionTiming' not in launcher or
+            b'GCConfigureNativeGameTiming' not in launcher or b'Native game timing configured' not in launcher):
+        raise SystemExit('Launcher does not include coherent native game timing')
     info = plistlib.loads(archive.read(base + 'Info.plist'))
     if not info.get('CADisableMinimumFrameDurationOnPhone'):
         raise SystemExit('Launcher does not opt into ProMotion')
@@ -82,7 +83,7 @@ provenance = {
     'jitless_storage': 'derived-from-game-mach-o',
     'egl_binding': 'direct-libglesv2',
     'gl_binding': 'direct-forwarders-with-apple-msaa',
-    'timing': 'launcher-game-callback',
+    'timing': 'native-game-clock-cap-120',
     'ipa_sha256': hashlib.sha256(ipa.read_bytes()).hexdigest(),
     'device_tested': False,
 }
