@@ -8,4 +8,11 @@ if(NOT DEFINED ENV{GEODE_SDK})
     message(FATAL_ERROR "Set GEODE_SDK to the Geode 5.11.2 SDK")
 endif()
 add_subdirectory($ENV{GEODE_SDK} ${CMAKE_CURRENT_BINARY_DIR}/geode)
+# The pinned iOS bindings generate standalone FMOD C entry points. SDK 5.11.2's
+# generated-source prelude does not include their types before these definitions.
+# Use the SDK's own declarations, keeping their C linkage and native signatures.
+if(GEODE_TARGET_PLATFORM STREQUAL "iOS")
+    target_compile_options(GeodeBindings PRIVATE
+        -include "$ENV{GEODE_SDK}/loader/include/Geode/fmod/fmod.h")
+endif()
 setup_geode_mod(${PROJECT_NAME})

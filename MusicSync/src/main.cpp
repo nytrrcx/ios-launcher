@@ -29,6 +29,7 @@ class $modify(ProMotionMusicSyncLayer, PlayLayer) {
         bool ready = false;
         bool audioTriggers = false;
         double nextPoll = 0;
+        double nextDiagnostic = 0;
     };
 
     bool init(GJGameLevel* level, bool replay, bool dontCreateObjects) {
@@ -47,6 +48,7 @@ class $modify(ProMotionMusicSyncLayer, PlayLayer) {
         }
         m_fields->clock.reset();
         m_fields->nextPoll = 0;
+        m_fields->nextDiagnostic = 0;
         m_fields->ready = true;
         if (promotionEnabled()) {
             log::info("ProMotion Music Sync: {}. CBF/input/physics settings are unchanged.",
@@ -86,6 +88,11 @@ class $modify(ProMotionMusicSyncLayer, PlayLayer) {
         }
         auto position = audio->getMusicTimeMS(0);
         if (!position) { state.clock.reset(); return; } // Wait for stream start.
+        if (wall >= state.nextDiagnostic) {
+            log::info("ProMotion Music Sync clock: level {:.3f} s, song {} ms, player X {:.3f}",
+                      m_gameState.m_levelTime, position, m_player1->getPositionX());
+            state.nextDiagnostic = wall + 30;
+        }
         auto target = state.clock.sample(m_gameState.m_levelTime, position, wall);
         if (!target) return;
         auto length = audio->getMusicLengthMS(0);
@@ -100,6 +107,7 @@ class $modify(ProMotionMusicSyncLayer, PlayLayer) {
     void resetLevel() {
         m_fields->clock.reset();
         m_fields->nextPoll = 0;
+        m_fields->nextDiagnostic = 0;
         PlayLayer::resetLevel();
     }
 };
