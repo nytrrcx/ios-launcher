@@ -14,5 +14,8 @@ add_subdirectory($ENV{GEODE_SDK} ${CMAKE_CURRENT_BINARY_DIR}/geode)
 if(GEODE_TARGET_PLATFORM STREQUAL "iOS")
     target_compile_options(GeodeBindings PRIVATE
         -include "$ENV{GEODE_SDK}/loader/include/Geode/fmod/fmod.h")
+    # This audio-only mod has no GL calls. Do not pull Apple's EAGL classes
+    # into an ANGLE session merely because the SDK lists the framework.
+    target_link_options(${PROJECT_NAME} PRIVATE -Wl,-dead_strip_dylibs)
 endif()
 setup_geode_mod(${PROJECT_NAME})
