@@ -40,6 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/patch_angle_stencil.py vendor/ANGLEGLKit
+          python3 scripts/patch_angle_loader.py vendor/ANGLEGLKit
           make -C vendor/ANGLEGLKit stage FINALPACKAGE=1 STRIP=0 TARGET=iphone:clang:16.5:15.0
           export PROMOTION_FRAMEWORKS_DIR="$RUNNER_TEMP/promotion-frameworks"
           mkdir -p "$PROMOTION_FRAMEWORKS_DIR"

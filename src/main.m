@@ -645,7 +645,7 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
 	// hook NSUserDefault before running libraries' initializers
 	NUDGuestHooksInit();
 	SecItemGuestHooksInit();
-	AppLog(@"[invokeAppMain] Finished init guest hooks, now dlopen binary.");
+	AppLog(@"[invokeAppMain] Finished init guest hooks.");
 	// NSFMGuestHooksInit();
 	// initDead10ccFix();
 	//  UIAGuestHooksInit();
@@ -653,6 +653,23 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
     // Load directly: LiveContainer must have its own TweakLoader injection disabled.
     // This also handles a game whose TweakLoader dependency is not loaded until dlopen below.
     if ([gcUserDefaults boolForKey:@"USE_MAX_FPS"]) {
+        setenv("ANGLEGLKit", "1", 1);
+        NSString *glesPath = [bundlePath stringByAppendingPathComponent:@"Frameworks/libGLESv2.framework/libGLESv2"];
+        AppLog(@"[ProMotion] Loading libGLESv2: %@", glesPath);
+        [LogUtils flush];
+        dlerror();
+        void *gles = dlopen(glesPath.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL | RTLD_FIRST);
+        if (!gles) {
+            const char *failure = dlerror();
+            *path = oldPath;
+            return [NSString stringWithFormat:@"Cannot load ProMotion GL library: %s", failure ?: "unknown error"];
+        }
+        if (!dlsym(gles, "EGL_GetDisplay") || !dlsym(gles, "glGetString")) {
+            *path = oldPath;
+            return @"The ProMotion GL library is missing its EGL or GL entry points.";
+        }
+        AppLog(@"[ProMotion] libGLESv2 loaded, loading ANGLEGLKit.");
+        [LogUtils flush];
         NSString *rendererPath = [bundlePath stringByAppendingPathComponent:@"Frameworks/ANGLEGLKit.framework/ANGLEGLKit"];
         dlerror();
         void *renderer = dlopen(rendererPath.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);
@@ -666,7 +683,13 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
             *path = oldPath;
             return @"This ANGLEGLKit build lacks the stencil-buffer fix. Reinstall the ProMotion launcher build.";
         }
-        setenv("ANGLEGLKit", "1", 1);
+        const unsigned *directEGL = (const unsigned *)dlsym(renderer, "GCGeodeEGLDirectVersion");
+        if (!directEGL || *directEGL != 1) {
+            *path = oldPath;
+            return @"The ProMotion renderer lacks the direct EGL loader fix. Reinstall the updated launcher build.";
+        }
+        AppLog(@"[ProMotion] ANGLEGLKit loaded with stencil and direct EGL fixes, loading timing library.");
+        [LogUtils flush];
         NSString *timingLibrary = [gcMainBundle.privateFrameworksPath stringByAppendingPathComponent:@"CAHighFPS.dylib"];
         dlerror();
         if (!dlopen(timingLibrary.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL)) {
@@ -674,6 +697,8 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
             *path = oldPath;
             return [NSString stringWithFormat:@"Cannot load ProMotion timing: %s", failure ?: "unknown error"];
         }
+        AppLog(@"[ProMotion] Timing library loaded.");
+        [LogUtils flush];
     } else {
         unsetenv("ANGLEGLKit");
     }
@@ -682,6 +707,8 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
 	uint32_t appIndex = _dyld_image_count();
 	appMainImageIndex = appIndex;
 
+	AppLog(@"[invokeAppMain] Loading game: %@", appBundle.executablePath);
+    [LogUtils flush];
 	dlerror();
 	void* appHandle = dlopen(appExecPath, RTLD_LAZY | RTLD_GLOBAL | RTLD_FIRST);
 	appExecutableHandle = appHandle;
@@ -733,7 +760,10 @@ static NSString* invokeAppMain(NSString* selectedApp, NSString* selectedContaine
 
 static void exceptionHandler(NSException* exception) {
 	NSString* error = [NSString stringWithFormat:@"%@\nCall stack: %@", exception.reason, exception.callStackSymbols];
+	AppLogError(@"[GeodeBootstrap] Uncaught %@: %@", exception.name, error);
+	[LogUtils flush];
 	[gcUserDefaults setObject:error forKey:@"error"];
+	[gcUserDefaults synchronize];
 }
 
 int GeodeMain(int argc, char* argv[]) {
@@ -926,7 +956,10 @@ int GeodeMain(int argc, char* argv[]) {
 		}
 		NSString* appError = invokeAppMain(selectedApp, @"GeometryDash", safeMode, argc, argv);
 		if (appError) {
+			AppLogError(@"[GeodeBootstrap] Launch failed: %@", appError);
+			[LogUtils flush];
 			[gcUserDefaults setObject:appError forKey:@"error"];
+			[gcUserDefaults synchronize];
 			// potentially unrecovable state, exit now
 			return 1;
 		}

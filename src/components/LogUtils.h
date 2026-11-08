@@ -7,6 +7,7 @@ typedef NS_ENUM(NSInteger, LogLevel) { LogUnk, LogInfo, LogWarn, LogError, LogDe
 + (void)log:(NSString*)format, ...;
 + (void)logWithLevel:(LogLevel)level log:(NSString*)format, ...;
 + (void)clearLogs:(BOOL)force;
++ (void)flush;
 
 @end
 

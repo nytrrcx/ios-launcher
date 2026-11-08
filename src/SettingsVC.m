@@ -1301,7 +1301,13 @@ extern NSString *g_commitHash;
 			if (launchArgs && [launchArgs length] > 2) {
 				env = launchArgs;
 			} else {
-				env = @"--geode:use-common-handler-offset=a4c000";
+                NSString *argumentError = nil;
+                env = [Patcher jitlessArgumentsForExecutable:[bundlePath URLByAppendingPathComponent:@"GeometryJump"].path
+                    safeMode:NO error:&argumentError];
+                if (!env) {
+                    [Utils showError:self title:argumentError error:nil];
+                    return;
+                }
 			}
 			[env writeToFile:extractionPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
 			UIAlertController* alert =

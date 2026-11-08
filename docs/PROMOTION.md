@@ -27,6 +27,7 @@ Local build, with Theos and an iOS SDK installed:
 ```
 git submodule update --init --recursive
 python3 scripts/patch_angle_stencil.py vendor/ANGLEGLKit
+python3 scripts/patch_angle_loader.py vendor/ANGLEGLKit
 make -C vendor/ANGLEGLKit stage FINALPACKAGE=1 STRIP=0 TARGET=iphone:clang:16.5:15.0
 mkdir -p /tmp/promotion-frameworks
 cp -R Resources/GDFrameworks/libEGL.framework Resources/GDFrameworks/libGLESv2.framework /tmp/promotion-frameworks/
@@ -121,4 +122,28 @@ address constant is used. The patch cache revision is bumped so the first Launch
 after upgrading rebuilds the old trampoline. Renderer switches no longer reset
 the independent hook cache. A missing or invalid writable storage section stops
 launch with an error rather than guessing an address. The phone report identified
-the incompatible layout; device retesting of this correction remains required.
+the incompatible layout; the subsequent phone test confirmed that launching with
+ProMotion disabled works with this correction.
+
+## ProMotion startup and EGL dispatch
+
+The follow-up phone test still stopped before the game binary finished loading
+with ProMotion enabled. The previous log message covered three separate loads,
+so it did not identify which library failed.
+
+The bundled libEGL dynamically searches for libGLESv2 under the main executable's
+Frameworks directory. In LiveContainer that directory can belong to the host or
+launcher rather than the nested game. Loading another copy also separates EGL
+and GL thread-local context state. The renderer now links its EGL calls directly
+to the `EGL_*` exports of the same libGLESv2 that provides GL. The framebuffer
+generation shims likewise call `GL_GenFramebuffers` and `GL_GenRenderbuffers`
+directly instead of resolving `RTLD_NEXT` in a process containing other renderers.
+Host tests check these exports against the actual bundled backend, and IPA
+verification rejects a wrapper that still depends on libEGL or native OpenGLES.
+
+Frame-rate setters use a per-thread reentrancy guard and one native setter per
+update. Bootstrap logs now distinguish libGLESv2, ANGLEGLKit, timing, and the game;
+each stage is flushed before loading. Loader errors and uncaught Objective-C
+exceptions are also written to the launcher's fixed log path. These changes
+address startup hazards found in the implementation; the precise phone crash
+cause and successful 120 Hz presentation still require a device retest.

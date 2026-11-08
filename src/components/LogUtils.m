@@ -3,22 +3,29 @@
 
 static const NSUInteger MAX_LOG_FILE_SIZE = 1024 * 1024; // 1 MB
 static dispatch_queue_t loggingQueue;
+static char loggingQueueKey;
 
 @implementation LogUtils
 
 + (void)initialize {
 	static dispatch_once_t onceToken;
-	dispatch_once(&onceToken, ^{ loggingQueue = dispatch_queue_create("com.geode.logqueue", DISPATCH_QUEUE_SERIAL); });
+	dispatch_once(&onceToken, ^{
+        loggingQueue = dispatch_queue_create("com.geode.logqueue", DISPATCH_QUEUE_SERIAL);
+        dispatch_queue_set_specific(loggingQueue, &loggingQueueKey, &loggingQueueKey, NULL);
+    });
 }
 
 + (NSString*)logFilePath {
-	NSArray* paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-	if ([paths[0] hasSuffix:@"GeometryDash/Documents"]) {
-		// a fix since im lazy to actually get the shared doc
-		return [paths[0] stringByAppendingPathComponent:@"../../../../app.log"];
-	} else {
-		return [paths[0] stringByAppendingPathComponent:@"app.log"];
-	}
+    // Resolve while still in the launcher. Guest hooks later change HOME/NSBundle.
+    static NSString *path;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+        if ([documents hasSuffix:@"GeometryDash/Documents"])
+            documents = [documents stringByAppendingPathComponent:@"../../../.."];
+        path = [[documents stringByAppendingPathComponent:@"app.log"] stringByStandardizingPath];
+    });
+    return path;
 }
 
 + (void)log:(NSString*)format, ... {
@@ -69,17 +76,23 @@ static dispatch_queue_t loggingQueue;
 		if (![[Utils getPrefs] boolForKey:@"DEBUG_LOGS"])
 			return;
 	}
+    // Capture the launcher path before dispatching and before the guest changes HOME.
+    NSString *logPath = [self logFilePath];
 	dispatch_async(loggingQueue, ^{
 		[self checkLogFileSize];
-		NSFileHandle* fileHandle = [NSFileHandle fileHandleForWritingAtPath:[self logFilePath]];
+		NSFileHandle* fileHandle = [NSFileHandle fileHandleForWritingAtPath:logPath];
 		if (fileHandle) {
 			[fileHandle seekToEndOfFile];
 			[fileHandle writeData:[[message stringByAppendingString:@"\n"] dataUsingEncoding:NSUTF8StringEncoding]];
 			[fileHandle closeFile];
 		} else {
-			[[message stringByAppendingString:@"\n"] writeToFile:[self logFilePath] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+			[[message stringByAppendingString:@"\n"] writeToFile:logPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
 		}
 	});
+}
+
++ (void)flush {
+    if (!dispatch_get_specific(&loggingQueueKey)) dispatch_sync(loggingQueue, ^{});
 }
 
 + (void)checkLogFileSize {
@@ -103,5 +116,6 @@ static dispatch_queue_t loggingQueue;
 		});
 	}
 }
+
 
 @end

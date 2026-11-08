@@ -3,9 +3,22 @@ from pathlib import Path
 import hashlib
 import json
 import plistlib
+import struct
 import subprocess
 import sys
 import zipfile
+
+
+def dependencies(binary):
+    result = []
+    cursor = 32
+    for _ in range(struct.unpack_from('<I', binary, 16)[0]):
+        kind, length = struct.unpack_from('<II', binary, cursor)
+        if kind in (0xc, 0x80000018, 0x8000001f, 0x20, 0x80000023):
+            offset = struct.unpack_from('<I', binary, cursor + 8)[0]
+            result.append(binary[cursor + offset:binary.index(b'\0', cursor + offset, cursor + length)].decode())
+        cursor += length
+    return result
 
 packages = Path(sys.argv[1])
 ipas = list(packages.glob('*.ipa'))
@@ -22,6 +35,14 @@ with zipfile.ZipFile(ipa) as archive:
         plistlib.loads(archive.read(prefix + 'Info.plist'))
         if name == 'ANGLEGLKit' and b'GCGeodeStencilFixVersion' not in binary:
             raise SystemExit('IPA contains an unpatched renderer')
+        if name == 'ANGLEGLKit':
+            if b'GCGeodeEGLDirectVersion' not in binary:
+                raise SystemExit('IPA renderer does not include direct EGL binding')
+            imports = dependencies(binary)
+            if any('/libEGL.framework/' in path or '/OpenGLES.framework/' in path for path in imports):
+                raise SystemExit('Renderer still depends on an executable-path EGL loader or native OpenGLES')
+            if not any('/libGLESv2.framework/' in path for path in imports):
+                raise SystemExit('Renderer does not link directly to ANGLE')
     archive.read(base + 'Frameworks/CAHighFPS.dylib')
     info = plistlib.loads(archive.read(base + 'Info.plist'))
     if not info.get('CADisableMinimumFrameDurationOnPhone'):
@@ -31,6 +52,7 @@ provenance = {
     'angle_commit': subprocess.check_output(['git', '-C', 'vendor/ANGLEGLKit', 'rev-parse', 'HEAD'], text=True).strip(),
     'stencil_fix_version': 1,
     'jitless_storage': 'derived-from-game-mach-o',
+    'egl_binding': 'direct-libglesv2',
     'ipa_sha256': hashlib.sha256(ipa.read_bytes()).hexdigest(),
     'device_tested': False,
 }

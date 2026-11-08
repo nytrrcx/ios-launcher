@@ -9,33 +9,42 @@ static NSInteger requestedFPS(void) {
     return MIN(120, MAX(1, UIScreen.mainScreen.maximumFramesPerSecond));
 }
 
+static _Thread_local BOOL applyingRate;
+
+static void applyGameRate(CADisplayLink *link) {
+    if (applyingRate) return;
+    applyingRate = YES;
+    @try {
+        if (@available(iOS 15.0, *)) {
+            float fps = (float)requestedFPS();
+            link.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80.0f, fps), fps, fps);
+        } else {
+            link.preferredFramesPerSecond = requestedFPS();
+        }
+    } @finally {
+        applyingRate = NO;
+    }
+}
+
 %group ProMotionTiming
 %hook CADisplayLink
 - (void)addToRunLoop:(NSRunLoop*)runLoop forMode:(NSRunLoopMode)mode {
     // Configure even clients that never call a frame-rate setter (Cocos defaults).
-    if (@available(iOS 15.0, *)) {
-        float fps = (float)requestedFPS();
-        self.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80.0f, fps), fps, fps);
-    } else {
-        self.preferredFramesPerSecond = requestedFPS();
-    }
+    applyGameRate(self);
     %orig;
 }
 - (void)setPreferredFrameRateRange:(CAFrameRateRange)range {
-    float fps = (float)requestedFPS();
-    %orig(CAFrameRateRangeMake(MIN(80.0f, fps), fps, fps));
+    if (applyingRate) { %orig(range); return; }
+    applyGameRate(self);
 }
 - (void)setPreferredFramesPerSecond:(NSInteger)fps {
-    %orig(requestedFPS());
+    if (applyingRate) { %orig(fps); return; }
+    applyGameRate(self);
 }
 - (void)setFrameInterval:(NSInteger)interval {
-    %orig(1);
-    if (@available(iOS 15.0, *)) {
-        float fps = (float)requestedFPS();
-        self.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80.0f, fps), fps, fps);
-    } else {
-        self.preferredFramesPerSecond = requestedFPS();
-    }
+    if (applyingRate) { %orig(interval); return; }
+    // One native setter per update: legacy setters can call each other on newer iOS.
+    applyGameRate(self);
 }
 %end
 %end

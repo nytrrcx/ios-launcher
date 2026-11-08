@@ -12,5 +12,7 @@ if not candidates:
 source = sorted(candidates, key=lambda p: (len(p.parts), str(p)))[0]
 if b'GCGeodeStencilFixVersion' not in (source / 'ANGLEGLKit').read_bytes():
     raise SystemExit('Built renderer is missing the stencil-fix marker')
+if b'GCGeodeEGLDirectVersion' not in (source / 'ANGLEGLKit').read_bytes():
+    raise SystemExit('Built renderer is missing direct EGL binding')
 shutil.copytree(source, destination / 'ANGLEGLKit.framework', dirs_exist_ok=True)
 print('Collected renderer:', source)
