@@ -2,10 +2,13 @@ name: ProMotion Music Sync
 on:
   push:
     branches: [promotion-120hz]
-    paths: ['MusicSync/**', 'tests/test_music_sync.py', 'tests/music_sync.cpp', '.github/workflows/music-sync.yml']
+    paths: ['MusicSync/**', 'tests/test_music_sync.py', 'tests/music_sync.cpp', 'scripts/verify_music_sync.py', '.github/workflows/music-sync.yml']
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: music-sync-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   music-sync:
     runs-on: macos-latest

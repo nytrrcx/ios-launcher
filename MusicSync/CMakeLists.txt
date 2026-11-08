@@ -16,6 +16,9 @@ if(GEODE_TARGET_PLATFORM STREQUAL "iOS")
         -include "$ENV{GEODE_SDK}/loader/include/Geode/fmod/fmod.h")
     # This audio-only mod has no GL calls. Do not pull Apple's EAGL classes
     # into an ANGLE session merely because the SDK lists the framework.
+    get_target_property(music_sync_sdk_libraries geode-sdk INTERFACE_LINK_LIBRARIES)
+    list(REMOVE_ITEM music_sync_sdk_libraries "-framework OpenGLES")
+    set_property(TARGET geode-sdk PROPERTY INTERFACE_LINK_LIBRARIES "${music_sync_sdk_libraries}")
     target_link_options(${PROJECT_NAME} PRIVATE -Wl,-dead_strip -Wl,-dead_strip_dylibs)
 endif()
 setup_geode_mod(${PROJECT_NAME})
